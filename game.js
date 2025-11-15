@@ -1,0 +1,1199 @@
+(function () {
+  "use strict";
+
+  const GAME_CONFIG = {
+    INITIAL_LIVES: 3,
+    BASE_FORWARD_SPEED: 30,
+    MAX_FORWARD_SPEED: 60,
+    LANE_WIDTH: 3.2,
+    LANE_CHANGE_DURATION: 0.18,
+    GRAVITY: -34,
+    JUMP_FORCE: 15,
+    DOUBLE_JUMP_FORCE_MULTIPLIER: 0.85,
+    HIGH_JUMP_DOUBLE_TAP_WINDOW: 0.25,
+    BOOST_SPEED_MULTIPLIER: 1.05,
+    BOOST_DURATION: 2.2,
+    AIR_SPEED_MULTIPLIER: 0.85,
+    BOOST_SCORE_MULTIPLIER: 1.5,
+    TIME_WITHOUT_DAMAGE_FOR_REGEN: 6,
+    REGEN_INTERVAL_PER_LIFE: 3,
+    SCORE_PER_SECOND: 12,
+    BONUS_SCORE_PER_OBSTACLE: 60,
+    SCORE_PENALTY_ON_HIT: 40,
+    MIN_DISTANCE_BETWEEN_OBSTACLES: 20,
+    INITIAL_SPAWN_DISTANCE: 100,
+    OBSTACLE_SPAWN_RATE: 1.8,
+    OBSTACLE_SPAWN_ACCELERATION: 8,
+    OBSTACLE_PROBABILITIES: {
+      single: 0.55,
+      double: 0.3,
+      triple: 0.15,
+    },
+    SWIPE_MIN_DISTANCE: 40,
+    SWIPE_MIN_SPEED: 0.25,
+    DOUBLE_TAP_TIME_WINDOW: 0.3,
+    COLOR_TRACK: "#050a16",
+    COLOR_LANE_LINES: "#17f4ff",
+    COLOR_OBSTACLE: "#ff1f6e",
+    COLOR_BALL_BASE: "#1d9cff",
+    COLOR_BALL_STRIPES: "#1869a7ff",
+    COLOR_SPEED_PAD: "#00f9d9",
+    COLOR_UI_LIVES_ACTIVE: "#e92c2c",
+    COLOR_UI_LIVES_INACTIVE: "#3d3d3d",
+    TRACK_SEGMENT_LENGTH: 30,
+    TRACK_SEGMENT_COUNT: 10,
+    TRACK_WIDTH: 10,
+    CAMERA_HEIGHT: 6,
+    CAMERA_DISTANCE: 12,
+    CAMERA_LERP_SPEED: 0.1,
+    GROUND_Y: 0,
+    BOOST_PAD_LENGTH: 6,
+    BOOST_PAD_DISTANCE: 100,
+    INITIAL_SPAWN_BUFFER: 40,
+    BOOST_PAD_BUFFER: 30,
+    BOOST_PAD_MIN_DISTANCE: 100,
+    BOOST_PAD_DISABLE_RATIO: 1,
+    PLAYER_DIAMETER: 1.6,
+    BALL_ROTATION_MULTIPLIER: 0.2,
+    FLOOR_LINE_SPACING: 50,
+  };
+
+  const GameState = {
+    MENU: "menu",
+    RUNNING: "running",
+    PAUSED: "paused",
+    GAME_OVER: "gameover",
+  };
+
+  const Utils = {
+    lerp: (a, b, t) => a + (b - a) * t,
+    clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
+    now: () => performance.now() / 1000,
+  };
+
+  const PersistenceService = {
+    HIGH_SCORE_KEY: "neonRunnerHighScore",
+    LAST_SCORE_KEY: "neonRunnerLastScore",
+    loadHighScore() {
+      try {
+        return parseInt(localStorage.getItem(this.HIGH_SCORE_KEY), 10) || 0;
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
+        return 0;
+      }
+    },
+    saveHighScore(value) {
+      try {
+        localStorage.setItem(this.HIGH_SCORE_KEY, value.toString());
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
+      }
+    },
+    saveLastScore(value) {
+      try {
+        localStorage.setItem(this.LAST_SCORE_KEY, value.toString());
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
+      }
+    },
+    loadLastScore() {
+      try {
+        return parseInt(localStorage.getItem(this.LAST_SCORE_KEY), 10) || 0;
+      } catch (err) {
+        return 0;
+      }
+    },
+  };
+
+  const UIManager = {
+    init() {
+      this.scoreElement = document.getElementById("scoreValue");
+      this.livesContainer = document.getElementById("livesContainer");
+      this.pauseButton = document.getElementById("pauseButton");
+      this.speedElement = document.getElementById("speedValue");
+      this.menuOverlay = document.getElementById("menuOverlay");
+      this.pauseOverlay = document.getElementById("pauseOverlay");
+      this.gameOverOverlay = document.getElementById("gameOverOverlay");
+      this.newGameButton = document.getElementById("newGameButton");
+      this.resumeButton = document.getElementById("resumeButton");
+      this.restartButton = document.getElementById("restartButton");
+      this.backToMenuButton = document.getElementById("backToMenuButton");
+      this.retryButton = document.getElementById("retryButton");
+      this.menuButton = document.getElementById("menuButton");
+      this.gameOverScore = document.getElementById("gameOverScore");
+      this.gameOverHighScore = document.getElementById("gameOverHighScore");
+      this.menuHighScore = document.getElementById("menuHighScore");
+      this._createLives();
+      this.damageFlashTimeout = null;
+    },
+    _createLives() {
+      this.livesContainer.innerHTML = "";
+      this.lifeDots = [];
+      for (let i = 0; i < GAME_CONFIG.INITIAL_LIVES; i += 1) {
+        const dot = document.createElement("div");
+        dot.classList.add("life-dot");
+        this.livesContainer.appendChild(dot);
+        this.lifeDots.push(dot);
+      }
+    },
+    setScore(value) {
+      if (this.scoreElement) {
+        this.scoreElement.textContent = Math.floor(value).toString();
+      }
+    },
+    setSpeed(value) {
+      if (!this.speedElement) return;
+      this.speedElement.textContent = value.toFixed(1);
+    },
+    setLives(value) {
+      if (!this.lifeDots) return;
+      this.lifeDots.forEach((dot, index) => {
+        dot.classList.toggle("full", index < value);
+      });
+    },
+    setHighScore(value) {
+      if (this.menuHighScore) {
+        this.menuHighScore.textContent = Math.floor(value).toString();
+      }
+      if (this.gameOverHighScore) {
+        this.gameOverHighScore.textContent = Math.floor(value).toString();
+      }
+    },
+    setGameOverScore(value) {
+      if (this.gameOverScore) {
+        this.gameOverScore.textContent = Math.floor(value).toString();
+      }
+    },
+    showOverlay(overlay) {
+      this.hideOverlays();
+      const target = this[overlay];
+      if (target) {
+        target.classList.remove("hidden");
+      }
+    },
+    hideOverlays() {
+      [this.menuOverlay, this.pauseOverlay, this.gameOverOverlay].forEach(
+        (overlay) => overlay && overlay.classList.add("hidden")
+      );
+    },
+    flashDamage() {
+      const container = document.getElementById("gameContainer");
+      if (!container) return;
+      container.classList.add("damage-flash");
+      if (this.damageFlashTimeout) {
+        clearTimeout(this.damageFlashTimeout);
+      }
+      this.damageFlashTimeout = setTimeout(() => {
+        container.classList.remove("damage-flash");
+      }, 200);
+    },
+  };
+
+  const SceneFactory = {
+    createEngine(canvas) {
+      return new BABYLON.Engine(canvas, true, { stencil: true, preserveDrawingBuffer: true });
+    },
+    createScene(engine, canvas) {
+      const scene = new BABYLON.Scene(engine);
+      scene.clearColor = new BABYLON.Color4(0.01, 0.02, 0.05, 1);
+      scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+      scene.fogDensity = 0.004;
+      scene.fogColor = new BABYLON.Color3(0.01, 0.02, 0.05);
+
+      const camera = new BABYLON.FreeCamera(
+        "mainCamera",
+        new BABYLON.Vector3(0, GAME_CONFIG.CAMERA_HEIGHT, -GAME_CONFIG.CAMERA_DISTANCE),
+        scene
+      );
+      if (canvas) {
+        camera.attachControl(canvas, true);
+      }
+      camera.minZ = 0.2;
+      camera.speed = 0;
+      camera.inertia = 0.9;
+      camera.checkCollisions = false;
+      camera.applyGravity = false;
+
+      const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+      hemi.intensity = 0.7;
+
+      const point = new BABYLON.PointLight("point", new BABYLON.Vector3(0, 10, -10), scene);
+      point.intensity = 1.1;
+      point.diffuse = new BABYLON.Color3(0.8, 0.8, 1);
+
+      const glow = new BABYLON.GlowLayer("glow", scene, {
+        blurKernelSize: 64,
+      });
+      glow.intensity = 0.6;
+
+      return { scene, camera, glow };
+    },
+  };
+
+  const TrackManager = {
+    init(scene) {
+      this.scene = scene;
+      this.segments = [];
+      this.laneLines = [];
+      this.sideBars = [];
+      this.floorLines = [];
+      this.trackDepth =
+        GAME_CONFIG.TRACK_SEGMENT_COUNT * GAME_CONFIG.TRACK_SEGMENT_LENGTH;
+      this.lineBackOffset = GAME_CONFIG.TRACK_SEGMENT_LENGTH * 0.9;
+      this.lineLength = this.trackDepth + this.lineBackOffset + 12;
+      this._createSegments();
+      this._createLaneLines();
+      this._createSideBars();
+      this._createFloorLines();
+    },
+    _createSegments() {
+      for (let i = 0; i < GAME_CONFIG.TRACK_SEGMENT_COUNT; i += 1) {
+        const segment = BABYLON.MeshBuilder.CreateBox(
+          `trackSeg_${i}`,
+          {
+            width: GAME_CONFIG.TRACK_WIDTH,
+            depth: GAME_CONFIG.TRACK_SEGMENT_LENGTH,
+            height: 0.3,
+          },
+          this.scene
+        );
+        segment.position.z = i * GAME_CONFIG.TRACK_SEGMENT_LENGTH;
+        segment.position.y = GAME_CONFIG.GROUND_Y - 0.15;
+        const mat = new BABYLON.StandardMaterial(`trackMat_${i}`, this.scene);
+        mat.diffuseColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_TRACK);
+        mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+        mat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        segment.material = mat;
+        this.segments.push(segment);
+      }
+    },
+    _createLaneLines() {
+      const lineColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_LANE_LINES);
+      const laneOffsets = [-GAME_CONFIG.LANE_WIDTH, GAME_CONFIG.LANE_WIDTH];
+      laneOffsets.forEach((offset) => {
+        const line = BABYLON.MeshBuilder.CreateBox(
+          `laneLine_${offset}`,
+          {
+            width: 0.1,
+            depth: this.lineLength,
+            height: 0.05,
+          },
+          this.scene
+        );
+        line.position.x = offset;
+        line.position.y = GAME_CONFIG.GROUND_Y + 0.01;
+        line.position.z = this.lineLength / 2;
+        const mat = new BABYLON.StandardMaterial(`lineMat_${offset}`, this.scene);
+        mat.emissiveColor = lineColor;
+        mat.diffuseColor = lineColor.scale(0.2);
+        mat.alpha = 0.9;
+        line.material = mat;
+        this.laneLines.push(line);
+      });
+    },
+    _createSideBars() {
+      const halfWidth = GAME_CONFIG.TRACK_WIDTH / 2 + 1;
+      const barLength = this.lineLength;
+      const glowColor = BABYLON.Color3.FromHexString("#1c9dff");
+      [1, -1].forEach((side) => {
+        const bar = BABYLON.MeshBuilder.CreateBox(
+            `sideBar_${side}`,
+            {
+            width: 0.4,
+            depth: barLength,
+            height: 0.4,
+            },
+          this.scene
+        );
+        bar.position.x = side * halfWidth;
+      bar.position.z = barLength / 2;
+        bar.position.y = GAME_CONFIG.GROUND_Y + 0.2;
+        const mat = new BABYLON.StandardMaterial(`sideMat_${side}`, this.scene);
+        mat.emissiveColor = glowColor;
+        mat.diffuseColor = glowColor.scale(0.1);
+        mat.alpha = 0.8;
+        bar.material = mat;
+        this.sideBars.push(bar);
+      });
+    },
+    _createFloorLines() {
+      const spacing = GAME_CONFIG.FLOOR_LINE_SPACING;
+      const count = Math.ceil(this.trackDepth / spacing) + 6;
+      for (let i = 0; i < count; i += 1) {
+        const line = BABYLON.MeshBuilder.CreateBox(
+          `floorLine_${i}`,
+          {
+            width: GAME_CONFIG.TRACK_WIDTH + 1,
+            depth: 0.2,
+            height: 0.04,
+          },
+          this.scene
+        );
+        line.position.y = GAME_CONFIG.GROUND_Y + 0.01;
+        const mat = new BABYLON.StandardMaterial(`floorLineMat_${i}`, this.scene);
+        const lineColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_TRACK).scale(1.2);
+        mat.emissiveColor = lineColor;
+        mat.diffuseColor = lineColor;
+        mat.alpha = 0.75;
+        line.material = mat;
+        this.floorLines.push(line);
+      }
+    },
+    update(playerZ) {
+      const firstSegment = this.segments[0];
+      if (
+        firstSegment &&
+        playerZ - firstSegment.position.z > GAME_CONFIG.TRACK_SEGMENT_LENGTH
+      ) {
+        const moved = this.segments.shift();
+        moved.position.z =
+          this.segments[this.segments.length - 1].position.z +
+          GAME_CONFIG.TRACK_SEGMENT_LENGTH;
+        this.segments.push(moved);
+      }
+      const totalDepth =
+        GAME_CONFIG.TRACK_SEGMENT_COUNT * GAME_CONFIG.TRACK_SEGMENT_LENGTH;
+      const centerOffset = this.lineLength / 2 - this.lineBackOffset;
+      const centerZ = playerZ + centerOffset;
+      this.laneLines.forEach((line) => {
+        line.position.z = centerZ;
+      });
+      this.sideBars.forEach((bar) => {
+        bar.position.z = centerZ;
+        const phase = (Utils.now() % 1) * Math.PI * 2;
+        const brightness = (Math.sin(phase) + 1) / 2;
+        bar.material.emissiveColor.r = 0.1 + brightness * 0.7;
+        bar.material.emissiveColor.g = 0.1 + brightness * 0.7;
+        bar.material.emissiveColor.b = 0.5 + brightness * 0.5;
+      });
+      this._refreshFloorLines(playerZ);
+    },
+    getLaneX(index) {
+      return (index - 1) * GAME_CONFIG.LANE_WIDTH;
+    },
+    getFrontZ() {
+      const last = this.segments[this.segments.length - 1];
+      return last.position.z + GAME_CONFIG.TRACK_SEGMENT_LENGTH / 2;
+    },
+    reset() {
+      this.segments.forEach((seg, idx) => {
+        seg.position.z = idx * GAME_CONFIG.TRACK_SEGMENT_LENGTH;
+      });
+    },
+    _refreshFloorLines(playerZ) {
+      const spacing = GAME_CONFIG.FLOOR_LINE_SPACING;
+      const baseZ = Math.floor(playerZ / spacing) * spacing - spacing * 2;
+      this.floorLines.forEach((line, index) => {
+        line.position.z = baseZ + index * spacing;
+      });
+    },
+  };
+
+  const PLAYER_SHAPE_SEQUENCES = {
+    launch: [
+      { duration: 0.08, scale: new BABYLON.Vector3(1.1, 0.85, 1.1) },
+      { duration: 0.18, scale: new BABYLON.Vector3(0.95, 1.18, 0.95) },
+    ],
+    land: [
+      { duration: 0.12, scale: new BABYLON.Vector3(1.2, 0.8, 1.2) },
+      { duration: 0.22, scale: new BABYLON.Vector3(1, 1, 1) },
+    ],
+  };
+
+  const PlayerController = {
+    init(scene, track) {
+      this.track = track;
+      this.scene = scene;
+      this.playerRadius = GAME_CONFIG.PLAYER_DIAMETER * 0.5;
+      this.mesh = BABYLON.MeshBuilder.CreateSphere(
+        "playerBall",
+        { diameter: GAME_CONFIG.PLAYER_DIAMETER, segments: 24 },
+        scene
+      );
+      this.mesh.position = new BABYLON.Vector3(0, this._groundLevel(), 0);
+      this.mesh.material = this._createMaterial(scene);
+      this.mesh.receiveShadows = false;
+      this.mesh.castShadow = false;
+      this.currentLane = 1;
+      this.laneTransition = { active: false, duration: GAME_CONFIG.LANE_CHANGE_DURATION };
+      this.verticalVelocity = 0;
+      this.isGrounded = true;
+      this.jumpCount = 0;
+      this.boostTimer = 0;
+      this.forwardSpeed = GAME_CONFIG.BASE_FORWARD_SPEED;
+      this.highJumpRequested = false;
+      this.shapeState = {
+        sequence: null,
+        index: 0,
+        timer: 0,
+        startScale: this.mesh.scaling.clone(),
+      };
+      this.lastJumpPressTime = -GAME_CONFIG.HIGH_JUMP_DOUBLE_TAP_WINDOW * 2;
+    },
+    _createMaterial(scene) {
+      const mat = new BABYLON.StandardMaterial("playerMat", scene);
+      mat.diffuseColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_BALL_BASE);
+      mat.specularColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_BALL_BASE);
+      mat.roughness = 0.2;
+      const texture = new BABYLON.DynamicTexture("ballStripes", { width: 256, height: 256 }, scene);
+      const ctx = texture.getContext();
+      ctx.fillStyle = GAME_CONFIG.COLOR_BALL_BASE;
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.fillStyle = GAME_CONFIG.COLOR_BALL_STRIPES;
+      const stripeSize = 20;
+      ctx.fillRect(0, 128 - stripeSize / 2, 256, stripeSize);
+      texture.update();
+      mat.diffuseTexture = texture;
+      return mat;
+    },
+    requestLaneChange(direction) {
+      const target = Utils.clamp(this.currentLane + direction, 0, 2);
+      if (target === this.currentLane) return;
+      this.currentLane = target;
+      this.laneTransition.active = true;
+      this.laneTransition.timer = 0;
+      this.laneTransition.start = this.mesh.position.x;
+      this.laneTransition.target = this.track.getLaneX(target);
+    },
+    requestJump(highJump = false) {
+      if (this.jumpCount >= 2) return false;
+      const now = Utils.now();
+      const quickDouble =
+        this.isGrounded &&
+        now - this.lastJumpPressTime <= GAME_CONFIG.HIGH_JUMP_DOUBLE_TAP_WINDOW;
+      const useHighJump = highJump || quickDouble;
+      const baseForce = GAME_CONFIG.JUMP_FORCE;
+      if (this.jumpCount === 0) {
+        const multiplier = useHighJump ? 1.35 : 1;
+        this.verticalVelocity = baseForce * multiplier;
+      } else {
+        this.verticalVelocity = baseForce * GAME_CONFIG.DOUBLE_JUMP_FORCE_MULTIPLIER;
+      }
+      this.jumpCount += 1;
+      this.isGrounded = false;
+      this._setShapeState("launch");
+      this.lastJumpPressTime = now;
+      return true;
+    },
+    applyBoost() {
+      this.boostTimer = GAME_CONFIG.BOOST_DURATION;
+      this.forwardSpeed = Math.min(
+        GAME_CONFIG.MAX_FORWARD_SPEED,
+        this.forwardSpeed * GAME_CONFIG.BOOST_SPEED_MULTIPLIER
+      );
+    },
+    update(dt) {
+      this._updateLane(dt);
+      this._updateVertical(dt);
+      this._updateBoost(dt);
+      this._updateShape(dt);
+      this._rotateBall(dt);
+      const airFactor = this.isGrounded ? 1 : GAME_CONFIG.AIR_SPEED_MULTIPLIER;
+      const forwardDelta = this.getForwardSpeed() * dt * airFactor;
+      this.mesh.position.z += forwardDelta;
+    },
+    _updateLane(dt) {
+      if (!this.laneTransition.active) return;
+      this.laneTransition.timer += dt;
+      const t = Utils.clamp(this.laneTransition.timer / this.laneTransition.duration, 0, 1);
+      const eased = t * t * (3 - 2 * t);
+      this.mesh.position.x = Utils.lerp(
+        this.laneTransition.start,
+        this.laneTransition.target,
+        eased
+      );
+      if (t >= 1) {
+        this.laneTransition.active = false;
+      }
+    },
+    _updateVertical(dt) {
+      this.verticalVelocity += GAME_CONFIG.GRAVITY * dt;
+      this.mesh.position.y += this.verticalVelocity * dt;
+      const groundLevel = this._groundLevel();
+      if (this.mesh.position.y <= groundLevel) {
+        if (!this.isGrounded) {
+          this._setShapeState("land");
+        }
+        this.mesh.position.y = groundLevel;
+        this.verticalVelocity = 0;
+        this.jumpCount = 0;
+        this.isGrounded = true;
+      }
+    },
+    _updateBoost(dt) {
+      if (this.boostTimer > 0) {
+        this.boostTimer -= dt;
+        if (this.boostTimer <= 0) {
+          this.boostTimer = 0;
+        }
+      }
+      this.forwardSpeed = Math.min(
+        GAME_CONFIG.MAX_FORWARD_SPEED,
+        this.forwardSpeed + dt * 0.08
+      );
+    },
+    _updateShape(dt) {
+      const mesh = this.mesh;
+      const state = this.shapeState;
+      if (state.sequence && state.sequence[state.index]) {
+        const step = state.sequence[state.index];
+        state.timer += dt;
+        const progress = Utils.clamp(state.timer / step.duration, 0, 1);
+        mesh.scaling = BABYLON.Vector3.Lerp(state.startScale, step.scale, progress);
+        if (progress >= 1) {
+          state.index += 1;
+          state.timer = 0;
+          state.startScale = mesh.scaling.clone();
+          if (state.index >= state.sequence.length) {
+            state.sequence = null;
+            state.index = 0;
+            state.timer = 0;
+          }
+        }
+        return;
+      }
+      mesh.scaling = BABYLON.Vector3.Lerp(mesh.scaling, new BABYLON.Vector3(1, 1, 1), 0.12);
+    },
+    _setShapeState(phase) {
+      const sequence = PLAYER_SHAPE_SEQUENCES[phase];
+      if (!sequence) {
+        this.shapeState.sequence = null;
+        return;
+      }
+      this.shapeState.sequence = sequence;
+      this.shapeState.index = 0;
+      this.shapeState.timer = 0;
+      this.shapeState.startScale = this.mesh.scaling.clone();
+    },
+    _rotateBall(dt) {
+      const currentSpeed = this.getForwardSpeed();
+      const distance = currentSpeed * dt;
+      const speedRatio = currentSpeed / GAME_CONFIG.BASE_FORWARD_SPEED;
+      const rotationMultiplier =
+        GAME_CONFIG.BALL_ROTATION_MULTIPLIER * Math.max(speedRatio, 0.5);
+      this.mesh.rotation.x += distance * rotationMultiplier;
+    },
+    getPosition() {
+      return this.mesh.position.clone();
+    },
+    getForwardSpeed() {
+      return this.forwardSpeed;
+    },
+    reset() {
+      this.mesh.position.copyFromFloats(0, this._groundLevel(), 0);
+      this.currentLane = 1;
+      this.laneTransition = { active: false, duration: GAME_CONFIG.LANE_CHANGE_DURATION };
+      this.verticalVelocity = 0;
+      this.isGrounded = true;
+      this.jumpCount = 0;
+      this.boostTimer = 0;
+      this.forwardSpeed = GAME_CONFIG.BASE_FORWARD_SPEED;
+      this.shapeState = {
+        sequence: null,
+        index: 0,
+        timer: 0,
+        startScale: this.mesh.scaling.clone(),
+      };
+      this.lastJumpPressTime = -GAME_CONFIG.HIGH_JUMP_DOUBLE_TAP_WINDOW * 2;
+    },
+    _groundLevel() {
+      return GAME_CONFIG.GROUND_Y + this.playerRadius;
+    },
+    isBoosting() {
+      return this.boostTimer > 0;
+    },
+  };
+
+  const ObstacleManager = {
+    init(scene, track) {
+      this.scene = scene;
+      this.track = track;
+      this.obstacles = [];
+      this.nextSpawnZ = GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
+      this.onHit = null;
+      this.onCleared = null;
+      this.maxSpeedReached = false;
+      this.maxSpawnPressure = 0;
+      this.prepareSpawn(0);
+    },
+    update(playerZ, playerX, playerY, playerSpeed) {
+      this._spawnIfNeeded(playerZ, playerSpeed);
+      this.obstacles = this.obstacles.filter((obs) => {
+        if (!obs || !obs.metadata) {
+          if (obs) obs.dispose();
+          return false;
+        }
+        if (playerZ - obs.position.z > 10) {
+          obs.dispose();
+          return false;
+        }
+        this._maybeClear(obs, playerZ);
+        this._maybeCollide(obs, playerX, playerY, playerZ);
+        return true;
+      });
+    },
+    _spawnIfNeeded(playerZ, playerSpeed) {
+      const targetZ = playerZ + GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
+      for (let attempts = 0; attempts < 12 && this.nextSpawnZ <= targetZ; attempts += 1) {
+        this._spawnObstacle(this.nextSpawnZ);
+        this.nextSpawnZ += this._calculateSpacing(playerSpeed);
+      }
+    },
+    _spawnObstacle(z) {
+      const laneConfig = this._pickLane();
+      const width =
+        laneConfig.length * GAME_CONFIG.LANE_WIDTH + (laneConfig.length - 1) * 0.5;
+      const obstacle = BABYLON.MeshBuilder.CreateBox(
+        `obs_${z}`,
+        {
+          width,
+          depth: 2.5,
+          height: 2,
+        },
+        this.scene
+      );
+      obstacle.position.z = z;
+      obstacle.position.y = GAME_CONFIG.GROUND_Y + 1;
+      obstacle.position.x = laneConfig.reduce((acc, lane) => acc + this.track.getLaneX(lane), 0) / laneConfig.length;
+      const mat = new BABYLON.StandardMaterial(`obsMat_${z}`, this.scene);
+      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_OBSTACLE);
+      mat.diffuseColor = mat.emissiveColor.scale(0.4);
+      mat.specularColor = new BABYLON.Color3(0, 0, 0);
+      obstacle.material = mat;
+      obstacle.metadata = {
+        lanes: laneConfig,
+        hit: false,
+        cleared: false,
+        width,
+        depth: 2.5,
+        height: 2,
+      };
+      this.obstacles.push(obstacle);
+    },
+    prepareSpawn(startZ) {
+      this.nextSpawnZ =
+        startZ + GAME_CONFIG.INITIAL_SPAWN_DISTANCE + GAME_CONFIG.INITIAL_SPAWN_BUFFER;
+    },
+    _pickLane() {
+      const rand = Math.random();
+      const probs = GAME_CONFIG.OBSTACLE_PROBABILITIES;
+      if (rand < probs.single) {
+        return [Math.floor(Math.random() * 3)];
+      }
+      if (rand < probs.single + probs.double) {
+        return Math.random() < 0.5 ? [0, 1] : [1, 2];
+      }
+      return [0, 1, 2];
+    },
+    _maybeCollide(obstacle, playerX, playerY, playerZ) {
+      if (!obstacle.metadata) return;
+      if (obstacle.metadata.hit) return;
+      const zDiff = Math.abs(obstacle.position.z - playerZ);
+      if (zDiff > 1.2) return;
+      const halfWidth = obstacle.metadata.width / 2 + 0.7;
+      if (Math.abs(obstacle.position.x - playerX) > halfWidth) return;
+      const obstacleTop = GAME_CONFIG.GROUND_Y + obstacle.metadata.height;
+      if (playerY > obstacleTop - 0.4) return;
+      obstacle.metadata.hit = true;
+      this.onHit?.(obstacle);
+    },
+    _maybeClear(obstacle, playerZ) {
+      if (!obstacle.metadata) return;
+      if (obstacle.metadata.cleared || obstacle.metadata.hit) return;
+      if (playerZ > obstacle.position.z + obstacle.metadata.depth / 2) {
+        obstacle.metadata.cleared = true;
+        this.onCleared?.(obstacle);
+      }
+    },
+    _calculateSpacing() {
+      const base = GAME_CONFIG.MIN_DISTANCE_BETWEEN_OBSTACLES;
+      const noise = Math.random() * GAME_CONFIG.OBSTACLE_SPAWN_RATE;
+      if (!this.maxSpeedReached) {
+        this.maxSpawnPressure = Math.max(0, this.maxSpawnPressure - 0.02);
+        return base + noise;
+      }
+      this.maxSpawnPressure = Math.min(1, this.maxSpawnPressure + 0.05);
+      const reduction = this.maxSpawnPressure * GAME_CONFIG.OBSTACLE_SPAWN_ACCELERATION;
+      return Math.max(6, base + noise - reduction);
+    },
+  };
+
+  const SpeedPadManager = {
+    init(scene, obstacleManager) {
+      this.scene = scene;
+      this.obstacleManager = obstacleManager;
+      this.pads = [];
+      this.nextPadZ = GAME_CONFIG.BOOST_PAD_DISTANCE;
+      this.lastPadZ = 0;
+      this.onBoost = null;
+      this.prepareSpawn(0);
+    },
+    update(playerZ, playerX, playerSpeed) {
+      const disableThreshold =
+        GAME_CONFIG.MAX_FORWARD_SPEED * GAME_CONFIG.BOOST_PAD_DISABLE_RATIO;
+      if (
+        playerSpeed < disableThreshold &&
+        playerZ + GAME_CONFIG.BOOST_PAD_DISTANCE > this.nextPadZ
+      ) {
+        this._spawnPad(this.nextPadZ);
+      }
+      this.pads = this.pads.filter((pad) => {
+        if (playerZ - pad.position.z > 10) {
+          pad.dispose();
+          return false;
+        }
+        this._checkTrigger(pad, playerZ, playerX);
+        return true;
+      });
+    },
+    _spawnPad(z) {
+      const safeZ = this._findSafePadZ(z);
+      if (safeZ === null) return;
+      const pad = BABYLON.MeshBuilder.CreateBox(
+        `boostPad_${safeZ}`,
+        {
+          width: GAME_CONFIG.TRACK_WIDTH - 1,
+          depth: GAME_CONFIG.BOOST_PAD_LENGTH,
+          height: 0.15,
+        },
+        this.scene
+      );
+      pad.position.z = safeZ;
+      pad.position.y = GAME_CONFIG.GROUND_Y + 0.08;
+      const mat = new BABYLON.StandardMaterial(`padMat_${safeZ}`, this.scene);
+      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_SPEED_PAD);
+      mat.alpha = 0.9;
+      pad.material = mat;
+      pad.metadata = { triggered: false };
+      this.pads.push(pad);
+      this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
+    },
+    _checkTrigger(pad, playerZ, playerX) {
+      if (pad.metadata.triggered) return;
+      const zDiff = Math.abs(pad.position.z - playerZ);
+      if (zDiff > GAME_CONFIG.BOOST_PAD_LENGTH / 2) return;
+      const halfWidth = (GAME_CONFIG.TRACK_WIDTH - 1) / 2 + 0.8;
+      if (Math.abs(playerX - pad.position.x) > halfWidth) return;
+      pad.metadata.triggered = true;
+      this.onBoost?.();
+    },
+    _findSafePadZ(startZ) {
+      let candidate = Math.max(
+        startZ,
+        this.lastPadZ + GAME_CONFIG.BOOST_PAD_MIN_DISTANCE
+      );
+      const maxAttempts = 6;
+      let attempts = 0;
+      while (attempts < maxAttempts) {
+        if (this._canPlacePad(candidate)) {
+          this.lastPadZ = candidate;
+          return candidate;
+        }
+        candidate += GAME_CONFIG.BOOST_PAD_LENGTH + 2;
+        attempts += 1;
+      }
+      return null;
+    },
+    _canPlacePad(z) {
+      if (!this.obstacleManager) {
+        return true;
+      }
+      const padRadius = GAME_CONFIG.BOOST_PAD_LENGTH / 2;
+      return !this.obstacleManager.obstacles.some((obs) => {
+        if (!obs || !obs.metadata) return false;
+        const obsRadius = obs.metadata.depth / 2;
+        const distance = Math.abs(obs.position.z - z);
+        return distance < padRadius + obsRadius + 1;
+      });
+    },
+    prepareSpawn(startZ) {
+      this.nextPadZ =
+        startZ + GAME_CONFIG.BOOST_PAD_DISTANCE + GAME_CONFIG.BOOST_PAD_BUFFER;
+      this.lastPadZ = startZ;
+    },
+  };
+
+  const LifeManager = {
+    init() {
+      this.currentLives = GAME_CONFIG.INITIAL_LIVES;
+      this.lastDamageTime = -999;
+      this.regenTimer = 0;
+      this.onDeath = null;
+      UIManager.setLives(this.currentLives);
+    },
+    reset() {
+      this.currentLives = GAME_CONFIG.INITIAL_LIVES;
+      this.lastDamageTime = -999;
+      this.regenTimer = 0;
+      UIManager.setLives(this.currentLives);
+    },
+    update(dt) {
+      if (this.currentLives >= GAME_CONFIG.INITIAL_LIVES) return;
+      const timeSinceDamage = Utils.now() - this.lastDamageTime;
+      if (timeSinceDamage < GAME_CONFIG.TIME_WITHOUT_DAMAGE_FOR_REGEN) return;
+      this.regenTimer += dt;
+      if (this.regenTimer >= GAME_CONFIG.REGEN_INTERVAL_PER_LIFE) {
+        this.regenTimer = 0;
+        this.currentLives += 1;
+        UIManager.setLives(this.currentLives);
+      }
+    },
+    takeDamage() {
+      if (this.currentLives <= 0) return;
+      this.currentLives -= 1;
+      this.regenTimer = 0;
+      this.lastDamageTime = Utils.now();
+      UIManager.setLives(this.currentLives);
+      if (this.currentLives <= 0) {
+        this.onDeath?.();
+      }
+    },
+    isAlive() {
+      return this.currentLives > 0;
+    },
+  };
+
+  const ScoreManager = {
+    init() {
+      this.score = 0;
+      this.highScore = PersistenceService.loadHighScore();
+      this.boosting = false;
+      UIManager.setScore(this.score);
+      UIManager.setHighScore(this.highScore);
+    },
+    reset() {
+      this.score = 0;
+      this.boosting = false;
+      UIManager.setScore(this.score);
+    },
+    update(dt, isBoosting) {
+      this.boosting = isBoosting;
+      const multiplier = isBoosting ? GAME_CONFIG.BOOST_SCORE_MULTIPLIER : 1;
+      this.score += GAME_CONFIG.SCORE_PER_SECOND * dt * multiplier;
+      UIManager.setScore(this.score);
+    },
+    addBonus() {
+      this.score += GAME_CONFIG.BONUS_SCORE_PER_OBSTACLE;
+      UIManager.setScore(this.score);
+    },
+    applyPenalty() {
+      this.score = Math.max(0, this.score - GAME_CONFIG.SCORE_PENALTY_ON_HIT);
+      UIManager.setScore(this.score);
+    },
+    completeRun() {
+      if (this.score > this.highScore) {
+        this.highScore = Math.floor(this.score);
+        PersistenceService.saveHighScore(this.highScore);
+      }
+      PersistenceService.saveLastScore(Math.floor(this.score));
+      UIManager.setHighScore(this.highScore);
+      UIManager.setGameOverScore(this.score);
+    },
+    getScore() {
+      return Math.floor(this.score);
+    },
+  };
+
+  const InputManager = {
+    init(canvas) {
+      this.canvas = canvas;
+      this.onMove = null;
+      this.onJump = null;
+      this.onSpace = null;
+      this.onPause = null;
+      this.lastJumpInput = -999;
+      this.pointerData = null;
+      window.addEventListener("keydown", this._onKeyDown);
+      canvas.addEventListener("pointerdown", this._onPointerDown);
+      canvas.addEventListener("pointerup", this._onPointerUp);
+    },
+    dispose() {
+      window.removeEventListener("keydown", this._onKeyDown);
+      if (this.canvas) {
+        this.canvas.removeEventListener("pointerdown", this._onPointerDown);
+        this.canvas.removeEventListener("pointerup", this._onPointerUp);
+      }
+    },
+    _onKeyDown: (event) => {
+      if (!InputManager) return;
+      const code = event.code;
+      if (code === "ArrowLeft") {
+        event.preventDefault();
+        InputManager.onMove?.(-1);
+        return;
+      }
+      if (code === "ArrowRight") {
+        event.preventDefault();
+        InputManager.onMove?.(1);
+        return;
+      }
+      if (code === "Space") {
+        event.preventDefault();
+        const handled = InputManager.onSpace?.() ?? false;
+        if (!handled) {
+          InputManager._triggerJump();
+        }
+        return;
+      }
+      if (code === "KeyP") {
+        event.preventDefault();
+        InputManager.onPause?.();
+      }
+    },
+    _triggerJump() {
+      const now = Utils.now();
+      const doubleTap =
+        now - InputManager.lastJumpInput <= GAME_CONFIG.DOUBLE_TAP_TIME_WINDOW;
+      InputManager.lastJumpInput = now;
+      InputManager.onJump?.(doubleTap);
+    },
+    _onPointerDown: (event) => {
+      InputManager.pointerData = {
+        x: event.clientX,
+        time: Utils.now(),
+      };
+    },
+    _onPointerUp: (event) => {
+      const data = InputManager.pointerData;
+      if (!data) return;
+      const deltaX = event.clientX - data.x;
+      const deltaTime = Utils.now() - data.time;
+      const absDeltaX = Math.abs(deltaX);
+      if (
+        absDeltaX >= GAME_CONFIG.SWIPE_MIN_DISTANCE &&
+        absDeltaX / Math.max(deltaTime, 0.01) >= GAME_CONFIG.SWIPE_MIN_SPEED
+      ) {
+        const direction = deltaX < 0 ? -1 : 1;
+        InputManager.onMove?.(direction);
+      } else if (deltaTime <= 0.35) {
+        InputManager._triggerJump();
+      }
+      InputManager.pointerData = null;
+    },
+  };
+
+  const Effects = {
+    init(camera) {
+      this.camera = camera;
+      this.shakeTimer = 0;
+      this.shakeStrength = 0;
+      this.originalPosition = camera.position.clone();
+    },
+    update(dt, playerPosition) {
+      if (!this.camera) return;
+      const desired = new BABYLON.Vector3(
+        playerPosition.x,
+        playerPosition.y + GAME_CONFIG.CAMERA_HEIGHT,
+        playerPosition.z - GAME_CONFIG.CAMERA_DISTANCE
+      );
+      const newPos = BABYLON.Vector3.Lerp(
+        this.camera.position,
+        desired,
+        GAME_CONFIG.CAMERA_LERP_SPEED
+      );
+      if (this.shakeTimer > 0) {
+        this.shakeTimer -= dt;
+        const offset = new BABYLON.Vector3(
+          (Math.random() - 0.5) * this.shakeStrength,
+          (Math.random() - 0.5) * this.shakeStrength,
+          (Math.random() - 0.5) * this.shakeStrength
+        );
+        newPos.addInPlace(offset);
+      }
+      this.camera.position.copyFrom(newPos);
+      this.camera.setTarget(playerPosition);
+    },
+    triggerShake(duration = 0.3, strength = 0.6) {
+      this.shakeTimer = duration;
+      this.shakeStrength = strength;
+    },
+  };
+
+  const StateMachine = {
+    currentState: GameState.MENU,
+    init() {
+      this.transitionTo(GameState.MENU);
+    },
+    transitionTo(next) {
+      this.currentState = next;
+      UIManager.hideOverlays();
+      if (next === GameState.MENU) {
+        UIManager.showOverlay("menuOverlay");
+      } else if (next === GameState.PAUSED) {
+        UIManager.showOverlay("pauseOverlay");
+      } else if (next === GameState.GAME_OVER) {
+        UIManager.showOverlay("gameOverOverlay");
+      }
+      this.onStateChange?.(next);
+    },
+    isRunning() {
+      return this.currentState === GameState.RUNNING;
+    },
+  };
+
+  const Game = {
+    init() {
+      const canvas = document.getElementById("renderCanvas");
+      if (!canvas) {
+        throw new Error("Render canvas missing");
+      }
+      UIManager.init();
+      this.canvas = canvas;
+      this.engine = SceneFactory.createEngine(canvas);
+      const { scene, camera, glow } = SceneFactory.createScene(this.engine, canvas);
+      this.scene = scene;
+      this.camera = camera;
+      this.glow = glow;
+      TrackManager.init(scene);
+      PlayerController.init(scene, TrackManager);
+      ObstacleManager.init(scene, TrackManager);
+      SpeedPadManager.init(scene, ObstacleManager);
+      LifeManager.init();
+      ScoreManager.init();
+      Effects.init(camera);
+      InputManager.init(canvas);
+      this._bindInputs();
+      this._bindUI();
+      ObstacleManager.onHit = () => this._handleCollision();
+      ObstacleManager.onCleared = () => ScoreManager.addBonus();
+      SpeedPadManager.onBoost = () => {
+        PlayerController.applyBoost();
+      };
+      LifeManager.onDeath = () => {
+        this._handleGameOver();
+      };
+      StateMachine.onStateChange = (state) => {
+        this.state = state;
+        this._updatePauseButton(state);
+      };
+      StateMachine.init();
+      this.state = GameState.MENU;
+      this.engine.runRenderLoop(() => this._gameLoop());
+      window.addEventListener("resize", () => this.engine.resize());
+    },
+    _bindInputs() {
+      InputManager.onMove = (direction) => {
+        if (this.state !== GameState.RUNNING) return;
+        PlayerController.requestLaneChange(direction);
+      };
+      InputManager.onJump = (doubleTap) => {
+        if (this.state !== GameState.RUNNING) return;
+        PlayerController.requestJump(doubleTap);
+      };
+      InputManager.onPause = () => {
+        if (this.state === GameState.RUNNING) {
+          this.pause();
+        } else if (this.state === GameState.PAUSED) {
+          this.resume();
+        }
+      };
+      InputManager.onSpace = () => {
+        if (this.state === GameState.MENU || this.state === GameState.GAME_OVER) {
+          this.startRun();
+          return true;
+        }
+        return false;
+      };
+    },
+    _bindUI() {
+      UIManager.newGameButton?.addEventListener("click", () => this.startRun());
+      UIManager.pauseButton?.addEventListener("click", () => this.pause());
+      UIManager.resumeButton?.addEventListener("click", () => this.resume());
+      UIManager.restartButton?.addEventListener("click", () => this.startRun());
+      UIManager.backToMenuButton?.addEventListener("click", () => this._gotoMenu());
+      UIManager.retryButton?.addEventListener("click", () => this.startRun());
+      UIManager.menuButton?.addEventListener("click", () => this._gotoMenu());
+    },
+    _updatePauseButton(state) {
+      if (!UIManager.pauseButton) return;
+      UIManager.pauseButton.disabled = state !== GameState.RUNNING;
+    },
+    _clearObstacles() {
+      ObstacleManager.obstacles.forEach((obs) => obs.dispose());
+      ObstacleManager.obstacles = [];
+      ObstacleManager.maxSpeedReached = false;
+      ObstacleManager.maxSpawnPressure = 0;
+      const playerZ = PlayerController.getPosition().z;
+      ObstacleManager.prepareSpawn(playerZ);
+    },
+    _clearPads() {
+      SpeedPadManager.pads.forEach((pad) => pad.dispose());
+      SpeedPadManager.pads = [];
+      SpeedPadManager.prepareSpawn(PlayerController.getPosition().z);
+    },
+    resetRun() {
+      TrackManager.reset();
+      PlayerController.reset();
+      this._clearObstacles();
+      this._clearPads();
+      LifeManager.reset();
+      ScoreManager.reset();
+    },
+    startRun() {
+      this.resetRun();
+      StateMachine.transitionTo(GameState.RUNNING);
+      this.state = GameState.RUNNING;
+    },
+    pause() {
+      if (this.state !== GameState.RUNNING) return;
+      StateMachine.transitionTo(GameState.PAUSED);
+    },
+    resume() {
+      if (this.state !== GameState.PAUSED) return;
+      StateMachine.transitionTo(GameState.RUNNING);
+    },
+    _gotoMenu() {
+      StateMachine.transitionTo(GameState.MENU);
+    },
+    _handleCollision() {
+      LifeManager.takeDamage();
+      ScoreManager.applyPenalty();
+      UIManager.flashDamage();
+      Effects.triggerShake(0.25, 0.9);
+    },
+    _handleGameOver() {
+      this._clearObstacles();
+      this._clearPads();
+      ScoreManager.completeRun();
+      StateMachine.transitionTo(GameState.GAME_OVER);
+    },
+    _gameLoop() {
+      const dt = this.engine.getDeltaTime() / 1000;
+      if (StateMachine.isRunning()) {
+        PlayerController.update(dt);
+        const playerPosition = PlayerController.getPosition();
+        const currentSpeed = PlayerController.getForwardSpeed();
+        if (currentSpeed >= GAME_CONFIG.MAX_FORWARD_SPEED) {
+          ObstacleManager.maxSpeedReached = true;
+        }
+        Effects.update(dt, playerPosition);
+        TrackManager.update(playerPosition.z);
+        ObstacleManager.update(
+          playerPosition.z,
+          playerPosition.x,
+          playerPosition.y,
+          currentSpeed
+        );
+        SpeedPadManager.update(
+          playerPosition.z,
+          playerPosition.x,
+          currentSpeed
+        );
+        LifeManager.update(dt);
+        ScoreManager.update(dt, PlayerController.isBoosting());
+      } else {
+        const playerPosition = PlayerController.getPosition();
+        Effects.update(dt, playerPosition);
+        TrackManager.update(playerPosition.z);
+      }
+      const speedValue = PlayerController.getForwardSpeed();
+      UIManager.setSpeed(speedValue);
+      this.scene.render();
+    },
+  };
+
+  window.addEventListener("DOMContentLoaded", () => {
+    Game.init();
+  });
+})();

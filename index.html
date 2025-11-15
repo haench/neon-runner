@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Runner</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+</head>
+
+<body>
+  <div id="gameContainer">
+    <canvas id="renderCanvas"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="hud-item score">
+        <div>Score: <span id="scoreValue">0</span></div>
+        <div class="speed-display">Speed: <span id="speedValue">0</span></div>
+      </div>
+      <button class="hud-item pause" id="pauseButton">Pause</button>
+    </div>
+
+    <div class="lives-panel">
+      <div class="lives" id="livesContainer"></div>
+    </div>
+
+    <div class="overlay" id="menuOverlay">
+      <div class="overlay-panel">
+        <h1>Neon Runner</h1>
+        <p>High Score: <span id="menuHighScore">0</span></p>
+        <button id="newGameButton">New Game</button>
+        <div class="overlay-note">Swipe / arrow keys / tap to control</div>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="pauseOverlay">
+      <div class="overlay-panel">
+        <h2>Paused</h2>
+        <button id="resumeButton">Resume</button>
+        <button id="restartButton">Restart</button>
+        <button id="backToMenuButton">Back to Menu</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="gameOverOverlay">
+      <div class="overlay-panel">
+        <h2>Game Over</h2>
+        <p>Score: <span id="gameOverScore">0</span></p>
+        <p>High Score: <span id="gameOverHighScore">0</span></p>
+        <button id="retryButton">Retry</button>
+        <button id="menuButton">Back to Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+
+</html>
