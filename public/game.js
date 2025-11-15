@@ -900,6 +900,10 @@
 
       const direction = this._getArrowDirection(padType);
       const perpendicular = { x: -direction.y, y: direction.x };
+      const offsetAxis =
+        padType === SpeedPadType.LEFT || padType === SpeedPadType.RIGHT
+          ? { x: 1, y: 0 }
+          : perpendicular;
       const center = { x: textureSize / 2, y: textureSize / 2 };
       const baseTip = {
         x: center.x - direction.x * forwardOffset,
@@ -909,8 +913,8 @@
       for (let i = 0; i < arrowCount; i += 1) {
         const offsetScalar = (i - (arrowCount - 1) / 2) * arrowSpacing;
         const offset = {
-          x: perpendicular.x * offsetScalar,
-          y: perpendicular.y * offsetScalar,
+          x: offsetAxis.x * offsetScalar,
+          y: offsetAxis.y * offsetScalar,
         };
 
         const tip = {
