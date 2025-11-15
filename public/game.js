@@ -20,6 +20,7 @@
     SCORE_PER_SECOND: 12,
     BONUS_SCORE_PER_OBSTACLE: 60,
     SCORE_PENALTY_ON_HIT: 40,
+    BONUS_SCORE_PER_DIAMOND: 120,
     MIN_DISTANCE_BETWEEN_OBSTACLES: 20,
     INITIAL_SPAWN_DISTANCE: 100,
     OBSTACLE_SPAWN_RATE: 1.8,
@@ -53,6 +54,11 @@
     BOOST_PAD_BUFFER: 30,
     BOOST_PAD_MIN_DISTANCE: 100,
     BOOST_PAD_DISABLE_RATIO: 1,
+    DIAMOND_MIN_SPACING: 32,
+    DIAMOND_MAX_SPACING: 64,
+    DIAMOND_SPAWN_LOOKAHEAD: 120,
+    DIAMOND_INITIAL_BUFFER: 36,
+    DIAMOND_COLLECTION_RADIUS: 1.4,
     PLAYER_DIAMETER: 1.6,
     BALL_ROTATION_MULTIPLIER: 0.2,
     FLOOR_LINE_SPACING: 50,
@@ -814,6 +820,151 @@
     },
   };
 
+  const CollectibleManager = {
+    init(scene, track, obstacleManager, speedPadManager) {
+      this.scene = scene;
+      this.track = track;
+      this.obstacleManager = obstacleManager;
+      this.speedPadManager = speedPadManager;
+      this.collectibles = [];
+      this.nextSpawnZ = GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
+      this.prepareSpawn(0);
+    },
+    prepareSpawn(startZ) {
+      this.nextSpawnZ =
+        startZ +
+        GAME_CONFIG.INITIAL_SPAWN_DISTANCE +
+        GAME_CONFIG.DIAMOND_INITIAL_BUFFER;
+    },
+    reset(startZ) {
+      this.collectibles.forEach((diamond) => diamond.dispose());
+      this.collectibles = [];
+      this.prepareSpawn(startZ);
+    },
+    update(dt, playerZ, playerX, playerY) {
+      this._spawnIfNeeded(playerZ);
+      this.collectibles = this.collectibles.filter((diamond) => {
+        if (!diamond || !diamond.metadata) {
+          if (diamond) diamond.dispose();
+          return false;
+        }
+        if (playerZ - diamond.position.z > 10) {
+          diamond.dispose();
+          return false;
+        }
+        const meta = diamond.metadata;
+        const bounce = Math.sin(Utils.now() * 4 + diamond.position.z * 0.15) * 0.15;
+        diamond.position.y = meta.baseY + bounce;
+        diamond.rotation.y += dt * 2.2;
+        if (this._checkCollect(diamond, playerX, playerY, playerZ)) {
+          ScoreManager.addDiamondBonus();
+          diamond.dispose();
+          return false;
+        }
+        return true;
+      });
+    },
+    _spawnIfNeeded(playerZ) {
+      const targetZ = playerZ + GAME_CONFIG.DIAMOND_SPAWN_LOOKAHEAD;
+      for (
+        let attempts = 0;
+        attempts < 10 && this.nextSpawnZ <= targetZ;
+        attempts += 1
+      ) {
+        const spawned = this._spawnDiamond(this.nextSpawnZ);
+        const spacing = this._randomSpacing();
+        this.nextSpawnZ += spacing;
+        if (!spawned) {
+          this.nextSpawnZ += 6;
+        }
+      }
+    },
+    _randomSpacing() {
+      const range =
+        GAME_CONFIG.DIAMOND_MAX_SPACING - GAME_CONFIG.DIAMOND_MIN_SPACING;
+      return GAME_CONFIG.DIAMOND_MIN_SPACING + Math.random() * range;
+    },
+    _spawnDiamond(z) {
+      if (!this.scene || !this.track) return false;
+      const lanes = [0, 1, 2];
+      for (let i = lanes.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+      }
+      for (let index = 0; index < lanes.length; index += 1) {
+        const lane = lanes[index];
+        if (!this._canPlaceDiamond(z, lane)) {
+          continue;
+        }
+        const diamond = BABYLON.MeshBuilder.CreatePolyhedron(
+          `diamond_${z}_${lane}`,
+          { type: 2, size: 0.65 },
+          this.scene
+        );
+        diamond.position.z = z;
+        diamond.position.x = this.track.getLaneX(lane);
+        diamond.position.y = GAME_CONFIG.GROUND_Y + 1.4;
+        diamond.rotation.x = Math.PI / 4;
+        const mat = new BABYLON.StandardMaterial(
+          `diamondMat_${z}_${lane}`,
+          this.scene
+        );
+        const color = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_BALL_BASE);
+        mat.emissiveColor = color.clone();
+        mat.diffuseColor = color.scale(0.3);
+        mat.specularColor = new BABYLON.Color3(0, 0, 0);
+        mat.alpha = 0.95;
+        diamond.material = mat;
+        diamond.metadata = {
+          lane,
+          baseY: diamond.position.y,
+        };
+        this.collectibles.push(diamond);
+        return true;
+      }
+      return false;
+    },
+    _canPlaceDiamond(z, lane) {
+      if (!this.track) return false;
+      const laneX = this.track.getLaneX(lane);
+      const obstacleConflict = this.obstacleManager?.obstacles.some((obs) => {
+        if (!obs || !obs.metadata) return false;
+        if (!obs.metadata.lanes?.includes(lane)) return false;
+        const halfDepth = (obs.metadata.depth || 0) / 2;
+        return Math.abs(obs.position.z - z) < halfDepth + 2;
+      });
+      if (obstacleConflict) {
+        return false;
+      }
+      const padConflict = this.speedPadManager?.pads.some((pad) => {
+        const padHalfDepth = GAME_CONFIG.BOOST_PAD_LENGTH / 2;
+        return Math.abs(pad.position.z - z) < padHalfDepth + 3;
+      });
+      if (padConflict) {
+        return false;
+      }
+      const collectibleConflict = this.collectibles.some((diamond) => {
+        if (!diamond || !diamond.metadata) return false;
+        if (diamond.metadata.lane !== lane) return false;
+        return Math.abs(diamond.position.z - z) < GAME_CONFIG.DIAMOND_MIN_SPACING / 2;
+      });
+      if (collectibleConflict) {
+        return false;
+      }
+      const laneBounds = GAME_CONFIG.TRACK_WIDTH / 2 - 0.5;
+      return Math.abs(laneX) <= laneBounds;
+    },
+    _checkCollect(diamond, playerX, playerY, playerZ) {
+      const dx = playerX - diamond.position.x;
+      const dy = playerY - diamond.position.y;
+      const dz = playerZ - diamond.position.z;
+      const distanceSq = dx * dx + dy * dy + dz * dz;
+      return (
+        distanceSq <= GAME_CONFIG.DIAMOND_COLLECTION_RADIUS * GAME_CONFIG.DIAMOND_COLLECTION_RADIUS
+      );
+    },
+  };
+
   const LifeManager = {
     init() {
       this.currentLives = GAME_CONFIG.INITIAL_LIVES;
@@ -875,6 +1026,10 @@
     },
     addBonus() {
       this.score += GAME_CONFIG.BONUS_SCORE_PER_OBSTACLE;
+      UIManager.setScore(this.score);
+    },
+    addDiamondBonus() {
+      this.score += GAME_CONFIG.BONUS_SCORE_PER_DIAMOND;
       UIManager.setScore(this.score);
     },
     applyPenalty() {
@@ -1049,6 +1204,7 @@
       PlayerController.init(scene, TrackManager);
       ObstacleManager.init(scene, TrackManager);
       SpeedPadManager.init(scene, ObstacleManager);
+      CollectibleManager.init(scene, TrackManager, ObstacleManager, SpeedPadManager);
       LifeManager.init();
       ScoreManager.init();
       Effects.init(camera);
@@ -1122,11 +1278,16 @@
       SpeedPadManager.pads = [];
       SpeedPadManager.prepareSpawn(PlayerController.getPosition().z);
     },
+    _clearCollectibles() {
+      const playerZ = PlayerController.getPosition().z;
+      CollectibleManager.reset(playerZ);
+    },
     resetRun() {
       TrackManager.reset();
       PlayerController.reset();
       this._clearObstacles();
       this._clearPads();
+      this._clearCollectibles();
       LifeManager.reset();
       ScoreManager.reset();
     },
@@ -1155,6 +1316,7 @@
     _handleGameOver() {
       this._clearObstacles();
       this._clearPads();
+      this._clearCollectibles();
       ScoreManager.completeRun();
       StateMachine.transitionTo(GameState.GAME_OVER);
     },
@@ -1179,6 +1341,12 @@
           playerPosition.z,
           playerPosition.x,
           currentSpeed
+        );
+        CollectibleManager.update(
+          dt,
+          playerPosition.z,
+          playerPosition.x,
+          playerPosition.y
         );
         LifeManager.update(dt);
         ScoreManager.update(dt, PlayerController.isBoosting());
