@@ -900,6 +900,10 @@
 
       const direction = this._getArrowDirection(padType);
       const perpendicular = { x: -direction.y, y: direction.x };
+      const spreadAxis =
+        padType === SpeedPadType.LEFT || padType === SpeedPadType.RIGHT
+          ? { x: 1, y: 0 }
+          : perpendicular;
       const center = { x: textureSize / 2, y: textureSize / 2 };
       const baseTip = {
         x: center.x - direction.x * forwardOffset,
@@ -909,8 +913,8 @@
       for (let i = 0; i < arrowCount; i += 1) {
         const offsetScalar = (i - (arrowCount - 1) / 2) * arrowSpacing;
         const offset = {
-          x: perpendicular.x * offsetScalar,
-          y: perpendicular.y * offsetScalar,
+          x: spreadAxis.x * offsetScalar,
+          y: spreadAxis.y * offsetScalar,
         };
 
         const tip = {
@@ -983,22 +987,16 @@
       return mat;
     },
     _getArrowDirection(padType) {
-      const rotation = this._getPadRotation(padType);
-      const sin = Math.sin(rotation);
-      const cos = Math.cos(rotation);
-      return { x: sin, y: -cos };
-    },
-    _getPadRotation(padType) {
       switch (padType) {
         case SpeedPadType.LEFT:
-          return 0;
+          return { x: -1, y: 0 };
         case SpeedPadType.RIGHT:
-          return Math.PI;
+          return { x: 1, y: 0 };
         case SpeedPadType.BACKWARD:
-          return Math.PI / 2;
+          return { x: 0, y: 1 };
         case SpeedPadType.FORWARD:
         default:
-          return -Math.PI / 2;
+          return { x: 0, y: -1 };
       }
     },
     _checkTrigger(pad, playerZ, playerX) {
