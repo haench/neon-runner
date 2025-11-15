@@ -908,14 +908,9 @@
 
       for (let i = 0; i < arrowCount; i += 1) {
         const offsetScalar = (i - (arrowCount - 1) / 2) * arrowSpacing;
-        const offset = {
-          x: perpendicular.x * offsetScalar,
-          y: perpendicular.y * offsetScalar,
-        };
-
         const tip = {
-          x: baseTip.x + offset.x,
-          y: baseTip.y + offset.y,
+          x: baseTip.x + offsetScalar,
+          y: baseTip.y,
         };
 
         const tailCenter = {
