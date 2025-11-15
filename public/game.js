@@ -25,6 +25,8 @@
     INITIAL_SPAWN_DISTANCE: 100,
     OBSTACLE_SPAWN_RATE: 1.8,
     OBSTACLE_SPAWN_ACCELERATION: 8,
+    MOVING_OBSTACLE_CHANCE: 0.35,
+    MOVING_OBSTACLE_SPEED_RANGE: [2.4, 4],
     OBSTACLE_PROBABILITIES: {
       single: 0.55,
       double: 0.3,
@@ -623,7 +625,7 @@
       this.maxSpawnPressure = 0;
       this.prepareSpawn(0);
     },
-    update(playerZ, playerX, playerY, playerSpeed) {
+    update(dt, playerZ, playerX, playerY, playerSpeed) {
       this._spawnIfNeeded(playerZ, playerSpeed);
       this.obstacles = this.obstacles.filter((obs) => {
         if (!obs || !obs.metadata) {
@@ -634,6 +636,7 @@
           obs.dispose();
           return false;
         }
+        this._updateMovement(obs, dt);
         this._maybeClear(obs, playerZ);
         this._maybeCollide(obs, playerX, playerY, playerZ);
         return true;
@@ -667,7 +670,11 @@
       mat.diffuseColor = mat.emissiveColor.scale(0.4);
       mat.specularColor = new BABYLON.Color3(0, 0, 0);
       obstacle.material = mat;
-      obstacle.metadata = {
+      const isSingleLane = laneConfig.length === 1;
+      const isMoving =
+        isSingleLane && Math.random() < GAME_CONFIG.MOVING_OBSTACLE_CHANCE;
+
+      const metadata = {
         lanes: laneConfig,
         hit: false,
         cleared: false,
@@ -675,7 +682,40 @@
         depth: 2.5,
         height: 2,
       };
+      if (isMoving) {
+        const halfTrack = GAME_CONFIG.TRACK_WIDTH / 2;
+        const halfWidth = width / 2;
+        const baseX = obstacle.position.x;
+        let minX = baseX - GAME_CONFIG.LANE_WIDTH;
+        let maxX = baseX + GAME_CONFIG.LANE_WIDTH;
+        minX = Math.max(minX, -halfTrack + halfWidth);
+        maxX = Math.min(maxX, halfTrack - halfWidth);
+        if (maxX - minX > 0.1) {
+          const speedRange = GAME_CONFIG.MOVING_OBSTACLE_SPEED_RANGE;
+          const speed =
+            speedRange[0] + Math.random() * (speedRange[1] - speedRange[0]);
+          metadata.movement = {
+            direction: Math.random() < 0.5 ? 1 : -1,
+            speed,
+            minX,
+            maxX,
+          };
+        }
+      }
+      obstacle.metadata = metadata;
       this.obstacles.push(obstacle);
+    },
+    _updateMovement(obstacle, dt) {
+      if (!obstacle.metadata?.movement || dt <= 0) return;
+      const movement = obstacle.metadata.movement;
+      obstacle.position.x += movement.direction * movement.speed * dt;
+      if (obstacle.position.x <= movement.minX) {
+        obstacle.position.x = movement.minX;
+        movement.direction = 1;
+      } else if (obstacle.position.x >= movement.maxX) {
+        obstacle.position.x = movement.maxX;
+        movement.direction = -1;
+      }
     },
     prepareSpawn(startZ) {
       this.nextSpawnZ =
@@ -1332,6 +1372,7 @@
         Effects.update(dt, playerPosition);
         TrackManager.update(playerPosition.z);
         ObstacleManager.update(
+          dt,
           playerPosition.z,
           playerPosition.x,
           playerPosition.y,
