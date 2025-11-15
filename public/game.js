@@ -895,10 +895,11 @@
       const arrowCount = 3;
       const arrowLength = textureSize * 0.28;
       const arrowWidth = textureSize * 0.26;
-      const arrowSpacing = arrowWidth * 0.82;
+      const arrowGap = textureSize * 0.04;
+      const arrowSpacing = arrowWidth + arrowGap;
       const forwardOffset = textureSize * 0.22;
 
-      const direction = this._getArrowDirection(padType);
+      const { direction, spacing } = this._getArrowOrientation(padType);
       const perpendicular = { x: -direction.y, y: direction.x };
       const center = { x: textureSize / 2, y: textureSize / 2 };
       const baseTip = {
@@ -909,8 +910,8 @@
       for (let i = 0; i < arrowCount; i += 1) {
         const offsetScalar = (i - (arrowCount - 1) / 2) * arrowSpacing;
         const offset = {
-          x: perpendicular.x * offsetScalar,
-          y: perpendicular.y * offsetScalar,
+          x: spacing.x * offsetScalar,
+          y: spacing.y * offsetScalar,
         };
 
         const tip = {
@@ -982,23 +983,29 @@
       mat.backFaceCulling = true;
       return mat;
     },
-    _getArrowDirection(padType) {
-      const rotation = this._getPadRotation(padType);
-      const sin = Math.sin(rotation);
-      const cos = Math.cos(rotation);
-      return { x: sin, y: -cos };
-    },
-    _getPadRotation(padType) {
+    _getArrowOrientation(padType) {
       switch (padType) {
         case SpeedPadType.LEFT:
-          return 0;
+          return {
+            direction: { x: 0, y: -1 },
+            spacing: { x: 0, y: -1 },
+          };
         case SpeedPadType.RIGHT:
-          return Math.PI;
+          return {
+            direction: { x: 0, y: 1 },
+            spacing: { x: 0, y: 1 },
+          };
         case SpeedPadType.BACKWARD:
-          return Math.PI / 2;
+          return {
+            direction: { x: 1, y: 0 },
+            spacing: { x: 0, y: 1 },
+          };
         case SpeedPadType.FORWARD:
         default:
-          return -Math.PI / 2;
+          return {
+            direction: { x: -1, y: 0 },
+            spacing: { x: 0, y: 1 },
+          };
       }
     },
     _checkTrigger(pad, playerZ, playerX) {
