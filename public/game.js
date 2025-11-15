@@ -14,7 +14,7 @@
     BOOST_SPEED_MULTIPLIER: 1.3,
     BOOST_PAD_LATERAL_PROBABILITY: 0.35,
     BOOST_PAD_FORWARD_PROBABILITY: 0.7,
-    BOOST_DURATION: 2.2,
+    BOOST_DURATION: 4,
     AIR_SPEED_MULTIPLIER: 0.85,
     BOOST_SCORE_MULTIPLIER: 1.5,
     TIME_WITHOUT_DAMAGE_FOR_REGEN: 6,
@@ -664,6 +664,7 @@
       this.jumpCount = 0;
       this.boostTimer = 0;
       this.forwardSpeed = GAME_CONFIG.BASE_FORWARD_SPEED;
+      this.speedEffect = null;
       this.highJumpRequested = false;
       this.shapeState = {
         sequence: null,
@@ -731,16 +732,16 @@
       if (padType === SpeedPadType.BACKWARD) {
         const boostAmount = Math.max(0, GAME_CONFIG.BOOST_SPEED_MULTIPLIER - 1);
         const slowMultiplier = Math.max(0, 1 - boostAmount);
-        this.boostTimer = 0;
         const slowedSpeed = this.forwardSpeed * slowMultiplier;
         this.forwardSpeed = Math.max(0, slowedSpeed);
+        this._startSpeedEffect("slow");
         return;
       }
-      this.boostTimer = GAME_CONFIG.BOOST_DURATION;
       this.forwardSpeed = Math.min(
         GAME_CONFIG.MAX_FORWARD_SPEED,
         this.forwardSpeed * GAME_CONFIG.BOOST_SPEED_MULTIPLIER
       );
+      this._startSpeedEffect("boost");
     },
     update(dt) {
       this._updateLane(dt);
@@ -787,10 +788,30 @@
           this.boostTimer = 0;
         }
       }
+      const effectActive = this.speedEffect && this.speedEffect.timer > 0;
+      if (effectActive) {
+        this.speedEffect.timer -= dt;
+        if (this.speedEffect.timer <= 0) {
+          this.speedEffect = null;
+          this.forwardSpeed = GAME_CONFIG.BASE_FORWARD_SPEED;
+        }
+        return;
+      }
       this.forwardSpeed = Math.min(
         GAME_CONFIG.MAX_FORWARD_SPEED,
         this.forwardSpeed + dt * 0.08
       );
+    },
+    _startSpeedEffect(type) {
+      this.speedEffect = {
+        type,
+        timer: GAME_CONFIG.BOOST_DURATION,
+      };
+      if (type === "boost") {
+        this.boostTimer = GAME_CONFIG.BOOST_DURATION;
+      } else {
+        this.boostTimer = 0;
+      }
     },
     _updateShape(dt) {
       const mesh = this.mesh;
@@ -848,6 +869,7 @@
       this.jumpCount = 0;
       this.boostTimer = 0;
       this.forwardSpeed = GAME_CONFIG.BASE_FORWARD_SPEED;
+      this.speedEffect = null;
       this.shapeState = {
         sequence: null,
         index: 0,
