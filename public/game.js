@@ -82,6 +82,8 @@
     BACKWARD: "backward",
   };
 
+  const DEFAULT_PLAYER_NAME = "Runner";
+
   const Utils = {
     lerp: (a, b, t) => a + (b - a) * t,
     clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
@@ -91,6 +93,10 @@
   const PersistenceService = {
     HIGH_SCORE_KEY: "neonRunnerHighScore",
     LAST_SCORE_KEY: "neonRunnerLastScore",
+    HIGH_SCORE_NAME_KEY: "neonRunnerHighScoreName",
+    PLAYER_NAME_KEY: "neonRunnerPlayerName",
+    LAST_SCORE_NAME_KEY: "neonRunnerLastScoreName",
+    SCORE_HISTORY_KEY: "neonRunnerScoreHistory",
     loadHighScore() {
       try {
         return parseInt(localStorage.getItem(this.HIGH_SCORE_KEY), 10) || 0;
@@ -99,16 +105,25 @@
         return 0;
       }
     },
-    saveHighScore(value) {
+    loadHighScoreName() {
+      try {
+        return localStorage.getItem(this.HIGH_SCORE_NAME_KEY) || "";
+      } catch (err) {
+        return "";
+      }
+    },
+    saveHighScore(value, name) {
       try {
         localStorage.setItem(this.HIGH_SCORE_KEY, value.toString());
+        localStorage.setItem(this.HIGH_SCORE_NAME_KEY, name ?? "");
       } catch (err) {
         console.warn("Persistence unavailable", err);
       }
     },
-    saveLastScore(value) {
+    saveLastScore(value, name) {
       try {
         localStorage.setItem(this.LAST_SCORE_KEY, value.toString());
+        localStorage.setItem(this.LAST_SCORE_NAME_KEY, name ?? "");
       } catch (err) {
         console.warn("Persistence unavailable", err);
       }
@@ -118,6 +133,62 @@
         return parseInt(localStorage.getItem(this.LAST_SCORE_KEY), 10) || 0;
       } catch (err) {
         return 0;
+      }
+    },
+    loadLastScoreName() {
+      try {
+        return localStorage.getItem(this.LAST_SCORE_NAME_KEY) || "";
+      } catch (err) {
+        return "";
+      }
+    },
+    savePlayerName(name) {
+      try {
+        localStorage.setItem(this.PLAYER_NAME_KEY, name ?? "");
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
+      }
+    },
+    loadPlayerName() {
+      try {
+        return localStorage.getItem(this.PLAYER_NAME_KEY) || "";
+      } catch (err) {
+        return "";
+      }
+    },
+    loadScoreHistory() {
+      try {
+        const raw = localStorage.getItem(this.SCORE_HISTORY_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+          .map((entry) => {
+            const scoreValue = Number.parseInt(entry.score, 10);
+            const timestampValue = Number(entry.timestamp);
+            return {
+              name: typeof entry.name === "string" ? entry.name : DEFAULT_PLAYER_NAME,
+              score: Number.isFinite(scoreValue) ? Math.max(0, scoreValue) : 0,
+              timestamp: Number.isFinite(timestampValue) ? timestampValue : Date.now(),
+            };
+          })
+          .filter((entry) => entry.score >= 0)
+          .sort((a, b) => {
+            if (b.score === a.score) {
+              return a.timestamp - b.timestamp;
+            }
+            return b.score - a.score;
+          });
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
+        return [];
+      }
+    },
+    saveScoreHistory(entries) {
+      try {
+        localStorage.setItem(this.SCORE_HISTORY_KEY, JSON.stringify(entries));
+      } catch (err) {
+        console.warn("Persistence unavailable", err);
       }
     },
   };
@@ -140,6 +211,20 @@
       this.gameOverScore = document.getElementById("gameOverScore");
       this.gameOverHighScore = document.getElementById("gameOverHighScore");
       this.menuHighScore = document.getElementById("menuHighScore");
+      this.playerNameInput = document.getElementById("playerNameInput");
+      this.gameOverPlayerName = document.getElementById("gameOverPlayerName");
+      this.menuHighScoreName = document.getElementById("menuHighScoreName");
+      this.gameOverHighScoreName = document.getElementById("gameOverHighScoreName");
+      this.scoreTableBody = document.getElementById("scoreTableBody");
+      this.scoreTableEmpty = document.getElementById("scoreTableEmpty");
+      if (this.playerNameInput) {
+        this.playerNameInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            this.newGameButton?.click();
+          }
+        });
+      }
       this._createLives();
       this.damageFlashTimeout = null;
     },
@@ -168,24 +253,79 @@
         dot.classList.toggle("full", index < value);
       });
     },
-    setHighScore(value) {
+    setPlayerName(value) {
+      if (this.playerNameInput) {
+        this.playerNameInput.value = value || "";
+      }
+    },
+    getPlayerName() {
+      if (!this.playerNameInput) return "";
+      return this.playerNameInput.value.trim();
+    },
+    blurPlayerNameInput() {
+      this.playerNameInput?.blur();
+    },
+    setHighScore(value, name) {
       if (this.menuHighScore) {
         this.menuHighScore.textContent = Math.floor(value).toString();
       }
       if (this.gameOverHighScore) {
         this.gameOverHighScore.textContent = Math.floor(value).toString();
       }
+      const displayName = name && name.trim().length > 0 ? name : "Anonymous";
+      if (this.menuHighScoreName) {
+        this.menuHighScoreName.textContent = displayName;
+      }
+      if (this.gameOverHighScoreName) {
+        this.gameOverHighScoreName.textContent = displayName;
+      }
     },
-    setGameOverScore(value) {
+    setGameOverScore(value, name) {
       if (this.gameOverScore) {
         this.gameOverScore.textContent = Math.floor(value).toString();
       }
+      if (this.gameOverPlayerName) {
+        const displayName = name && name.trim().length > 0 ? name : "Anonymous";
+        this.gameOverPlayerName.textContent = displayName;
+      }
+    },
+    setScoreTable(entries) {
+      if (!this.scoreTableBody) return;
+      this.scoreTableBody.innerHTML = "";
+      if (!entries || entries.length === 0) {
+        this.scoreTableEmpty?.classList.remove("hidden");
+        return;
+      }
+      this.scoreTableEmpty?.classList.add("hidden");
+      const fragment = document.createDocumentFragment();
+      entries.forEach((entry, index) => {
+        const row = document.createElement("tr");
+        const rankCell = document.createElement("td");
+        rankCell.textContent = (index + 1).toString();
+        row.appendChild(rankCell);
+
+        const nameCell = document.createElement("td");
+        const displayName = entry.name && entry.name.trim().length > 0 ? entry.name : "Anonymous";
+        nameCell.textContent = displayName;
+        row.appendChild(nameCell);
+
+        const scoreCell = document.createElement("td");
+        scoreCell.textContent = Math.floor(entry.score).toString();
+        scoreCell.classList.add("score-value");
+        row.appendChild(scoreCell);
+
+        fragment.appendChild(row);
+      });
+      this.scoreTableBody.appendChild(fragment);
     },
     showOverlay(overlay) {
       this.hideOverlays();
       const target = this[overlay];
       if (target) {
         target.classList.remove("hidden");
+        if (overlay === "menuOverlay" && this.playerNameInput) {
+          setTimeout(() => this.playerNameInput?.focus(), 0);
+        }
       }
     },
     hideOverlays() {
@@ -1261,14 +1401,25 @@
     init() {
       this.score = 0;
       this.highScore = PersistenceService.loadHighScore();
+      this.highScoreName = PersistenceService.loadHighScoreName();
+      const storedName = PersistenceService.loadPlayerName();
+      this.playerName = storedName && storedName.trim().length > 0 ? storedName : DEFAULT_PLAYER_NAME;
       this.boosting = false;
+      this.scoreHistory = PersistenceService.loadScoreHistory();
       UIManager.setScore(this.score);
-      UIManager.setHighScore(this.highScore);
+      UIManager.setHighScore(this.highScore, this.highScoreName);
+      UIManager.setPlayerName(this.playerName);
+      UIManager.setScoreTable(this.scoreHistory);
     },
     reset() {
       this.score = 0;
       this.boosting = false;
       UIManager.setScore(this.score);
+    },
+    setPlayerName(name) {
+      const trimmed = name?.trim() ?? "";
+      this.playerName = trimmed.length > 0 ? trimmed : DEFAULT_PLAYER_NAME;
+      PersistenceService.savePlayerName(this.playerName);
     },
     update(dt, isBoosting) {
       this.boosting = isBoosting;
@@ -1289,13 +1440,29 @@
       UIManager.setScore(this.score);
     },
     completeRun() {
-      if (this.score > this.highScore) {
-        this.highScore = Math.floor(this.score);
-        PersistenceService.saveHighScore(this.highScore);
+      const finalScore = Math.floor(this.score);
+      const entry = {
+        name: this.playerName,
+        score: finalScore,
+        timestamp: Date.now(),
+      };
+      this.scoreHistory.push(entry);
+      this.scoreHistory.sort((a, b) => {
+        if (b.score === a.score) {
+          return a.timestamp - b.timestamp;
+        }
+        return b.score - a.score;
+      });
+      PersistenceService.saveScoreHistory(this.scoreHistory);
+      if (finalScore > this.highScore) {
+        this.highScore = finalScore;
+        this.highScoreName = this.playerName;
+        PersistenceService.saveHighScore(this.highScore, this.highScoreName);
       }
-      PersistenceService.saveLastScore(Math.floor(this.score));
-      UIManager.setHighScore(this.highScore);
-      UIManager.setGameOverScore(this.score);
+      PersistenceService.saveLastScore(finalScore, this.playerName);
+      UIManager.setHighScore(this.highScore, this.highScoreName);
+      UIManager.setGameOverScore(finalScore, this.playerName);
+      UIManager.setScoreTable(this.scoreHistory);
     },
     getScore() {
       return Math.floor(this.score);
@@ -1325,6 +1492,24 @@
     _onKeyDown: (event) => {
       if (!InputManager) return;
       const code = event.code;
+      const activeElement = document.activeElement;
+      const isTypingField =
+        activeElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          activeElement.isContentEditable);
+      if (
+        isTypingField &&
+        activeElement === UIManager.playerNameInput &&
+        typeof StateMachine !== "undefined" &&
+        StateMachine.currentState === GameState.MENU
+      ) {
+        if (code === "Escape") {
+          event.preventDefault();
+          InputManager.onPause?.();
+        }
+        return;
+      }
       if (code === "ArrowLeft") {
         event.preventDefault();
         InputManager.onMove?.(-1);
@@ -1544,6 +1729,9 @@
       ScoreManager.reset();
     },
     startRun() {
+      const nameFromUI = UIManager.getPlayerName();
+      ScoreManager.setPlayerName(nameFromUI);
+      UIManager.blurPlayerNameInput();
       this.resetRun();
       StateMachine.transitionTo(GameState.RUNNING);
       this.state = GameState.RUNNING;
