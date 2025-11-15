@@ -844,6 +844,11 @@
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
+      ctx.save();
+      ctx.translate(textureSize / 2, textureSize / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.translate(-textureSize / 2, -textureSize / 2);
+
       const arrowCount = 3;
       const arrowHeight = textureSize / (arrowCount + 1.2);
       const arrowSpacing = arrowHeight * 0.35;
@@ -879,6 +884,8 @@
         ctx.lineTo(centerX + innerOffset, innerTailY);
         ctx.stroke();
       }
+
+      ctx.restore();
 
       texture.update();
 
