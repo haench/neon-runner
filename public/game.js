@@ -12,6 +12,8 @@
     DOUBLE_JUMP_FORCE_MULTIPLIER: 0.85,
     HIGH_JUMP_DOUBLE_TAP_WINDOW: 0.25,
     BOOST_SPEED_MULTIPLIER: 1.05,
+    BOOST_PAD_LATERAL_PROBABILITY: 0.35,
+    BOOST_PAD_FORWARD_PROBABILITY: 0.7,
     BOOST_DURATION: 2.2,
     AIR_SPEED_MULTIPLIER: 0.85,
     BOOST_SCORE_MULTIPLIER: 1.5,
@@ -71,6 +73,13 @@
     RUNNING: "running",
     PAUSED: "paused",
     GAME_OVER: "gameover",
+  };
+
+  const SpeedPadType = {
+    FORWARD: "forward",
+    LEFT: "left",
+    RIGHT: "right",
+    BACKWARD: "backward",
   };
 
   const Utils = {
@@ -484,7 +493,25 @@
       this.lastJumpPressTime = now;
       return true;
     },
-    applyBoost() {
+    applyBoost(padType = SpeedPadType.FORWARD) {
+      if (padType === SpeedPadType.LEFT) {
+        this.requestLaneChange(-1);
+        return;
+      }
+      if (padType === SpeedPadType.RIGHT) {
+        this.requestLaneChange(1);
+        return;
+      }
+      if (padType === SpeedPadType.BACKWARD) {
+        const slowMultiplier = Math.max(
+          0,
+          2 - GAME_CONFIG.BOOST_SPEED_MULTIPLIER
+        );
+        this.boostTimer = 0;
+        const slowedSpeed = this.forwardSpeed * slowMultiplier;
+        this.forwardSpeed = Math.max(0, slowedSpeed);
+        return;
+      }
       this.boostTimer = GAME_CONFIG.BOOST_DURATION;
       this.forwardSpeed = Math.min(
         GAME_CONFIG.MAX_FORWARD_SPEED,
@@ -796,6 +823,7 @@
     _spawnPad(z) {
       const safeZ = this._findSafePadZ(z);
       if (safeZ === null) return;
+      const padType = this._pickPadType();
       const pad = BABYLON.MeshBuilder.CreateBox(
         `boostPad_${safeZ}`,
         {
@@ -807,13 +835,124 @@
       );
       pad.position.z = safeZ;
       pad.position.y = GAME_CONFIG.GROUND_Y + 0.08;
-      const mat = new BABYLON.StandardMaterial(`padMat_${safeZ}`, this.scene);
-      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_SPEED_PAD);
-      mat.alpha = 0.9;
+      const mat = this._createPadMaterial(safeZ, padType);
       pad.material = mat;
-      pad.metadata = { triggered: false };
+      pad.metadata = { triggered: false, type: padType };
       this.pads.push(pad);
       this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
+    },
+    _pickPadType() {
+      const lateralChance = Utils.clamp(
+        GAME_CONFIG.BOOST_PAD_LATERAL_PROBABILITY,
+        0,
+        1
+      );
+      if (Math.random() < lateralChance) {
+        return Math.random() < 0.5 ? SpeedPadType.LEFT : SpeedPadType.RIGHT;
+      }
+      const forwardChance = Utils.clamp(
+        GAME_CONFIG.BOOST_PAD_FORWARD_PROBABILITY,
+        0,
+        1
+      );
+      return Math.random() < forwardChance
+        ? SpeedPadType.FORWARD
+        : SpeedPadType.BACKWARD;
+    },
+    _createPadMaterial(id, padType) {
+      const mat = new BABYLON.StandardMaterial(`padMat_${id}`, this.scene);
+      mat.specularColor = new BABYLON.Color3(0, 0, 0);
+      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_SPEED_PAD);
+      const textureSize = 512;
+      const texture = new BABYLON.DynamicTexture(
+        `padTex_${id}`,
+        { width: textureSize, height: textureSize },
+        this.scene,
+        false
+      );
+      const ctx = texture.getContext();
+      ctx.clearRect(0, 0, textureSize, textureSize);
+
+      ctx.fillStyle = GAME_CONFIG.COLOR_SPEED_PAD;
+      ctx.fillRect(0, 0, textureSize, textureSize);
+
+      const glowWidth = textureSize * 0.14;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+      ctx.fillRect(
+        textureSize / 2 - glowWidth / 2,
+        0,
+        glowWidth,
+        textureSize
+      );
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = textureSize * 0.06;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.save();
+      ctx.translate(textureSize / 2, textureSize / 2);
+      ctx.rotate(this._getPadRotation(padType));
+      ctx.translate(-textureSize / 2, -textureSize / 2);
+
+      const arrowCount = 3;
+      const arrowHeight = textureSize / (arrowCount + 1.2);
+      const arrowSpacing = arrowHeight * 0.35;
+      const centerX = textureSize / 2;
+      const outerOffset = textureSize * 0.28;
+      const innerOffset = outerOffset * 0.55;
+
+      for (let i = 0; i < arrowCount; i += 1) {
+        const baseY = textureSize * 0.18 + i * (arrowHeight + arrowSpacing);
+        const tipY = baseY;
+        const tailY = baseY + arrowHeight;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, tipY);
+        ctx.lineTo(centerX - outerOffset, tailY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, tipY);
+        ctx.lineTo(centerX + outerOffset, tailY);
+        ctx.stroke();
+
+        const innerTipY = tipY + arrowHeight * 0.32;
+        const innerTailY = innerTipY + arrowHeight * 0.52;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, innerTipY);
+        ctx.lineTo(centerX - innerOffset, innerTailY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, innerTipY);
+        ctx.lineTo(centerX + innerOffset, innerTailY);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+
+      texture.update();
+
+      mat.diffuseTexture = texture;
+      mat.emissiveTexture = texture;
+      mat.alpha = 0.92;
+      mat.backFaceCulling = true;
+      return mat;
+    },
+    _getPadRotation(padType) {
+      switch (padType) {
+        case SpeedPadType.LEFT:
+          return 0;
+        case SpeedPadType.RIGHT:
+          return Math.PI;
+        case SpeedPadType.BACKWARD:
+          return Math.PI / 2;
+        case SpeedPadType.FORWARD:
+        default:
+          return -Math.PI / 2;
+      }
     },
     _checkTrigger(pad, playerZ, playerX) {
       if (pad.metadata.triggered) return;
@@ -822,7 +961,7 @@
       const halfWidth = (GAME_CONFIG.TRACK_WIDTH - 1) / 2 + 0.8;
       if (Math.abs(playerX - pad.position.x) > halfWidth) return;
       pad.metadata.triggered = true;
-      this.onBoost?.();
+      this.onBoost?.(pad.metadata.type);
     },
     _findSafePadZ(startZ) {
       let candidate = Math.max(
@@ -1253,8 +1392,8 @@
       this._bindUI();
       ObstacleManager.onHit = () => this._handleCollision();
       ObstacleManager.onCleared = () => ScoreManager.addBonus();
-      SpeedPadManager.onBoost = () => {
-        PlayerController.applyBoost();
+      SpeedPadManager.onBoost = (padType) => {
+        PlayerController.applyBoost(padType);
       };
       LifeManager.onDeath = () => {
         this._handleGameOver();
