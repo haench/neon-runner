@@ -29,7 +29,14 @@
     <div class="overlay" id="menuOverlay">
       <div class="overlay-panel">
         <h1>Neon Runner</h1>
-        <p>High Score: <span id="menuHighScore">0</span></p>
+        <p class="high-score-line">
+          High Score: <span id="menuHighScore">0</span>
+          <span class="subtext">by <span id="menuHighScoreName">Anonymous</span></span>
+        </p>
+        <div class="input-group">
+          <label for="playerNameInput">Player Name</label>
+          <input id="playerNameInput" type="text" maxlength="20" placeholder="Enter your name" autocomplete="name" />
+        </div>
         <button id="newGameButton">New Game</button>
         <div class="overlay-note">Swipe / arrow keys / tap to control</div>
       </div>
@@ -48,7 +55,27 @@
       <div class="overlay-panel">
         <h2>Game Over</h2>
         <p>Score: <span id="gameOverScore">0</span></p>
-        <p>High Score: <span id="gameOverHighScore">0</span></p>
+        <p>Player: <span id="gameOverPlayerName">Anonymous</span></p>
+        <p class="high-score-line">
+          High Score: <span id="gameOverHighScore">0</span>
+          <span class="subtext">by <span id="gameOverHighScoreName">Anonymous</span></span>
+        </p>
+        <div class="leaderboard">
+          <h3>Leaderboard</h3>
+          <div class="leaderboard-scroll">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="scoreTableBody"></tbody>
+            </table>
+            <div id="scoreTableEmpty" class="leaderboard-empty">No scores yet.</div>
+          </div>
+        </div>
         <button id="retryButton">Retry</button>
         <button id="menuButton">Back to Menu</button>
       </div>
