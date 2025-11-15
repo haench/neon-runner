@@ -82,6 +82,12 @@
     </div>
   </div>
 
+  <script>
+    // Set window.FIREBASE_CONFIG before loading the game to enable
+    // the shared online leaderboard. Leave undefined to play offline.
+    window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || null;
+  </script>
+  <script type="module" src="firebase-service.js"></script>
   <script src="game.js"></script>
 </body>
 
