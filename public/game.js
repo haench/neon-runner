@@ -824,21 +824,32 @@
       const safeZ = this._findSafePadZ(z);
       if (safeZ === null) return;
       const padType = this._pickPadType();
-      const pad = BABYLON.MeshBuilder.CreateBox(
-        `boostPad_${safeZ}`,
-        {
-          width: GAME_CONFIG.TRACK_WIDTH - 1,
+      const lanes = this._pickPadConfiguration();
+      const padWidth = GAME_CONFIG.LANE_WIDTH;
+      lanes.forEach((lane) => {
+        const pad = BABYLON.MeshBuilder.CreateBox(
+          `boostPad_${safeZ}_${lane}`,
+          {
+            width: padWidth,
+            depth: GAME_CONFIG.BOOST_PAD_LENGTH,
+            height: 0.15,
+          },
+          this.scene
+        );
+        pad.position.z = safeZ;
+        pad.position.y = GAME_CONFIG.GROUND_Y + 0.08;
+        pad.position.x = this._laneToX(lane);
+        const mat = this._createPadMaterial(`${safeZ}_${lane}`, padType);
+        pad.material = mat;
+        pad.metadata = {
+          triggered: false,
+          type: padType,
+          lane,
+          width: padWidth,
           depth: GAME_CONFIG.BOOST_PAD_LENGTH,
-          height: 0.15,
-        },
-        this.scene
-      );
-      pad.position.z = safeZ;
-      pad.position.y = GAME_CONFIG.GROUND_Y + 0.08;
-      const mat = this._createPadMaterial(safeZ, padType);
-      pad.material = mat;
-      pad.metadata = { triggered: false, type: padType };
-      this.pads.push(pad);
+        };
+        this.pads.push(pad);
+      });
       this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
     },
     _pickPadType() {
@@ -858,6 +869,20 @@
       return Math.random() < forwardChance
         ? SpeedPadType.FORWARD
         : SpeedPadType.BACKWARD;
+    },
+    _pickPadConfiguration() {
+      const roll = Math.random();
+      if (roll < 0.5) {
+        return [0, 1, 2];
+      }
+      if (roll < 0.75) {
+        return Math.random() < 0.5 ? [0, 1] : [1, 2];
+      }
+      const singleLane = Math.floor(Math.random() * 3);
+      return [singleLane];
+    },
+    _laneToX(lane) {
+      return (lane - 1) * GAME_CONFIG.LANE_WIDTH;
     },
     _createPadMaterial(id, padType) {
       const mat = new BABYLON.StandardMaterial(`padMat_${id}`, this.scene);
@@ -1002,8 +1027,10 @@
     _checkTrigger(pad, playerZ, playerX) {
       if (pad.metadata.triggered) return;
       const zDiff = Math.abs(pad.position.z - playerZ);
-      if (zDiff > GAME_CONFIG.BOOST_PAD_LENGTH / 2) return;
-      const halfWidth = (GAME_CONFIG.TRACK_WIDTH - 1) / 2 + 0.8;
+      if (zDiff > (pad.metadata?.depth ?? GAME_CONFIG.BOOST_PAD_LENGTH) / 2) {
+        return;
+      }
+      const halfWidth = (pad.metadata?.width ?? GAME_CONFIG.LANE_WIDTH) / 2 + 0.3;
       if (Math.abs(playerX - pad.position.x) > halfWidth) return;
       pad.metadata.triggered = true;
       this.onBoost?.(pad.metadata.type);
