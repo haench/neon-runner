@@ -12,6 +12,8 @@
     DOUBLE_JUMP_FORCE_MULTIPLIER: 0.85,
     HIGH_JUMP_DOUBLE_TAP_WINDOW: 0.25,
     BOOST_SPEED_MULTIPLIER: 1.05,
+    BOOST_PAD_LATERAL_PROBABILITY: 0.35,
+    BOOST_PAD_FORWARD_PROBABILITY: 0.7,
     BOOST_DURATION: 2.2,
     AIR_SPEED_MULTIPLIER: 0.85,
     BOOST_SCORE_MULTIPLIER: 1.5,
@@ -77,6 +79,7 @@
     FORWARD: "forward",
     LEFT: "left",
     RIGHT: "right",
+    BACKWARD: "backward",
   };
 
   const Utils = {
@@ -499,6 +502,16 @@
         this.requestLaneChange(1);
         return;
       }
+      if (padType === SpeedPadType.BACKWARD) {
+        const slowMultiplier = Math.max(
+          0,
+          2 - GAME_CONFIG.BOOST_SPEED_MULTIPLIER
+        );
+        this.boostTimer = 0;
+        const slowedSpeed = this.forwardSpeed * slowMultiplier;
+        this.forwardSpeed = Math.max(0, slowedSpeed);
+        return;
+      }
       this.boostTimer = GAME_CONFIG.BOOST_DURATION;
       this.forwardSpeed = Math.min(
         GAME_CONFIG.MAX_FORWARD_SPEED,
@@ -829,9 +842,22 @@
       this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
     },
     _pickPadType() {
-      const types = [SpeedPadType.FORWARD, SpeedPadType.LEFT, SpeedPadType.RIGHT];
-      const index = Math.floor(Math.random() * types.length);
-      return types[index];
+      const lateralChance = Utils.clamp(
+        GAME_CONFIG.BOOST_PAD_LATERAL_PROBABILITY,
+        0,
+        1
+      );
+      if (Math.random() < lateralChance) {
+        return Math.random() < 0.5 ? SpeedPadType.LEFT : SpeedPadType.RIGHT;
+      }
+      const forwardChance = Utils.clamp(
+        GAME_CONFIG.BOOST_PAD_FORWARD_PROBABILITY,
+        0,
+        1
+      );
+      return Math.random() < forwardChance
+        ? SpeedPadType.FORWARD
+        : SpeedPadType.BACKWARD;
     },
     _createPadMaterial(id, padType) {
       const mat = new BABYLON.StandardMaterial(`padMat_${id}`, this.scene);
@@ -921,6 +947,8 @@
           return 0;
         case SpeedPadType.RIGHT:
           return Math.PI;
+        case SpeedPadType.BACKWARD:
+          return Math.PI / 2;
         case SpeedPadType.FORWARD:
         default:
           return -Math.PI / 2;
