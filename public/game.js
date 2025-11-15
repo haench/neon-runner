@@ -281,6 +281,7 @@
 
   const UIManager = {
     init() {
+      this.gameContainer = document.getElementById("gameContainer");
       this.scoreElement = document.getElementById("scoreValue");
       this.livesContainer = document.getElementById("livesContainer");
       this.pauseButton = document.getElementById("pauseButton");
@@ -313,6 +314,7 @@
       }
       this._createLives();
       this.damageFlashTimeout = null;
+      this.boostSkyActive = false;
     },
     _createLives() {
       this.livesContainer.innerHTML = "";
@@ -332,6 +334,15 @@
     setSpeed(value) {
       if (!this.speedElement) return;
       this.speedElement.textContent = value.toFixed(1);
+    },
+    setBoostSky(active) {
+      if (!this.gameContainer) return;
+      const shouldActivate = Boolean(active);
+      if (this.boostSkyActive === shouldActivate) {
+        return;
+      }
+      this.boostSkyActive = shouldActivate;
+      this.gameContainer.classList.toggle("boost-sky", shouldActivate);
     },
     setLives(value) {
       if (!this.lifeDots) return;
@@ -420,7 +431,7 @@
       );
     },
     flashDamage() {
-      const container = document.getElementById("gameContainer");
+      const container = this.gameContainer;
       if (!container) return;
       container.classList.add("damage-flash");
       if (this.damageFlashTimeout) {
@@ -1973,6 +1984,7 @@
       }
       const speedValue = PlayerController.getForwardSpeed();
       UIManager.setSpeed(speedValue);
+      UIManager.setBoostSky(PlayerController.isBoosting());
       this.scene.render();
     },
   };
