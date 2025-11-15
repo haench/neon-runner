@@ -807,13 +807,86 @@
       );
       pad.position.z = safeZ;
       pad.position.y = GAME_CONFIG.GROUND_Y + 0.08;
-      const mat = new BABYLON.StandardMaterial(`padMat_${safeZ}`, this.scene);
-      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_SPEED_PAD);
-      mat.alpha = 0.9;
+      const mat = this._createPadMaterial(safeZ);
       pad.material = mat;
       pad.metadata = { triggered: false };
       this.pads.push(pad);
       this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
+    },
+    _createPadMaterial(id) {
+      const mat = new BABYLON.StandardMaterial(`padMat_${id}`, this.scene);
+      mat.specularColor = new BABYLON.Color3(0, 0, 0);
+      mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_SPEED_PAD);
+      const textureSize = 512;
+      const texture = new BABYLON.DynamicTexture(
+        `padTex_${id}`,
+        { width: textureSize, height: textureSize },
+        this.scene,
+        false
+      );
+      const ctx = texture.getContext();
+      ctx.clearRect(0, 0, textureSize, textureSize);
+
+      ctx.fillStyle = GAME_CONFIG.COLOR_SPEED_PAD;
+      ctx.fillRect(0, 0, textureSize, textureSize);
+
+      const glowWidth = textureSize * 0.14;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+      ctx.fillRect(
+        textureSize / 2 - glowWidth / 2,
+        0,
+        glowWidth,
+        textureSize
+      );
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = textureSize * 0.06;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      const arrowCount = 3;
+      const arrowHeight = textureSize / (arrowCount + 1.2);
+      const arrowSpacing = arrowHeight * 0.35;
+      const centerX = textureSize / 2;
+      const outerOffset = textureSize * 0.28;
+      const innerOffset = outerOffset * 0.55;
+
+      for (let i = 0; i < arrowCount; i += 1) {
+        const baseY = textureSize * 0.18 + i * (arrowHeight + arrowSpacing);
+        const tipY = baseY;
+        const tailY = baseY + arrowHeight;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, tipY);
+        ctx.lineTo(centerX - outerOffset, tailY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, tipY);
+        ctx.lineTo(centerX + outerOffset, tailY);
+        ctx.stroke();
+
+        const innerTipY = tipY + arrowHeight * 0.32;
+        const innerTailY = innerTipY + arrowHeight * 0.52;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, innerTipY);
+        ctx.lineTo(centerX - innerOffset, innerTailY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, innerTipY);
+        ctx.lineTo(centerX + innerOffset, innerTailY);
+        ctx.stroke();
+      }
+
+      texture.update();
+
+      mat.diffuseTexture = texture;
+      mat.emissiveTexture = texture;
+      mat.alpha = 0.92;
+      mat.backFaceCulling = true;
+      return mat;
     },
     _checkTrigger(pad, playerZ, playerX) {
       if (pad.metadata.triggered) return;
