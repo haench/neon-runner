@@ -11,7 +11,7 @@
     JUMP_FORCE: 15,
     DOUBLE_JUMP_FORCE_MULTIPLIER: 0.85,
     HIGH_JUMP_DOUBLE_TAP_WINDOW: 0.25,
-    BOOST_SPEED_MULTIPLIER: 1.05,
+    BOOST_SPEED_MULTIPLIER: 1.3,
     BOOST_PAD_LATERAL_PROBABILITY: 0.35,
     BOOST_PAD_FORWARD_PROBABILITY: 0.7,
     BOOST_DURATION: 2.2,
@@ -53,6 +53,7 @@
     CAMERA_LERP_SPEED: 0.1,
     GROUND_Y: 0,
     BOOST_PAD_LENGTH: 6,
+    BOOST_PAD_OBSTACLE_BUFFER: 4,
     BOOST_PAD_DISTANCE: 100,
     INITIAL_SPAWN_BUFFER: 40,
     BOOST_PAD_BUFFER: 30,
@@ -62,6 +63,7 @@
     DIAMOND_MAX_SPACING: 64,
     DIAMOND_SPAWN_LOOKAHEAD: 120,
     DIAMOND_INITIAL_BUFFER: 36,
+    DIAMOND_OBSTACLE_BUFFER: 4,
     DIAMOND_COLLECTION_RADIUS: 1.4,
     PLAYER_DIAMETER: 1.6,
     BALL_ROTATION_MULTIPLIER: 0.2,
@@ -727,10 +729,8 @@
         return;
       }
       if (padType === SpeedPadType.BACKWARD) {
-        const slowMultiplier = Math.max(
-          0,
-          2 - GAME_CONFIG.BOOST_SPEED_MULTIPLIER
-        );
+        const boostAmount = Math.max(0, GAME_CONFIG.BOOST_SPEED_MULTIPLIER - 1);
+        const slowMultiplier = Math.max(0, 1 - boostAmount);
         this.boostTimer = 0;
         const slowedSpeed = this.forwardSpeed * slowMultiplier;
         this.forwardSpeed = Math.max(0, slowedSpeed);
@@ -1282,11 +1282,13 @@
         return true;
       }
       const padRadius = GAME_CONFIG.BOOST_PAD_LENGTH / 2;
+      const clearance =
+        padRadius + GAME_CONFIG.BOOST_PAD_OBSTACLE_BUFFER;
       return !this.obstacleManager.obstacles.some((obs) => {
         if (!obs || !obs.metadata) return false;
-        const obsRadius = obs.metadata.depth / 2;
+        const obsRadius = (obs.metadata.depth || 0) / 2;
         const distance = Math.abs(obs.position.z - z);
-        return distance < padRadius + obsRadius + 1;
+        return distance < clearance + obsRadius;
       });
     },
     prepareSpawn(startZ) {
@@ -1407,7 +1409,8 @@
         if (!obs || !obs.metadata) return false;
         if (!obs.metadata.lanes?.includes(lane)) return false;
         const halfDepth = (obs.metadata.depth || 0) / 2;
-        return Math.abs(obs.position.z - z) < halfDepth + 2;
+        const clearance = GAME_CONFIG.DIAMOND_OBSTACLE_BUFFER;
+        return Math.abs(obs.position.z - z) < halfDepth + clearance;
       });
       if (obstacleConflict) {
         return false;
