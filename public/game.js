@@ -917,7 +917,7 @@
 
       ctx.save();
 
-      const arrowCount = 3;
+      const arrowCount = 1;
       const arrowLength = textureSize * 0.28;
       const arrowWidth = textureSize * 0.26;
       const arrowSpacing = arrowWidth * 0.82;
