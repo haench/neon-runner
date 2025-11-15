@@ -891,43 +891,84 @@
       ctx.lineJoin = "round";
 
       ctx.save();
-      ctx.translate(textureSize / 2, textureSize / 2);
-      ctx.rotate(this._getPadRotation(padType));
-      ctx.translate(-textureSize / 2, -textureSize / 2);
 
       const arrowCount = 3;
-      const arrowHeight = textureSize / (arrowCount + 1.2);
-      const arrowSpacing = arrowHeight * 0.35;
-      const centerX = textureSize / 2;
-      const outerOffset = textureSize * 0.28;
-      const innerOffset = outerOffset * 0.55;
+      const arrowLength = textureSize * 0.28;
+      const arrowWidth = textureSize * 0.26;
+      const arrowSpacing = arrowWidth * 0.82;
+      const forwardOffset = textureSize * 0.22;
+
+      const direction = this._getArrowDirection(padType);
+      const perpendicular = { x: -direction.y, y: direction.x };
+      const center = { x: textureSize / 2, y: textureSize / 2 };
+      const baseTip = {
+        x: center.x - direction.x * forwardOffset,
+        y: center.y - direction.y * forwardOffset,
+      };
 
       for (let i = 0; i < arrowCount; i += 1) {
-        const baseY = textureSize * 0.18 + i * (arrowHeight + arrowSpacing);
-        const tipY = baseY;
-        const tailY = baseY + arrowHeight;
+        const offsetScalar = (i - (arrowCount - 1) / 2) * arrowSpacing;
+        const offset = {
+          x: perpendicular.x * offsetScalar,
+          y: perpendicular.y * offsetScalar,
+        };
+
+        const tip = {
+          x: baseTip.x + offset.x,
+          y: baseTip.y + offset.y,
+        };
+
+        const tailCenter = {
+          x: tip.x + direction.x * arrowLength,
+          y: tip.y + direction.y * arrowLength,
+        };
+
+        const outerHalfWidth = arrowWidth / 2;
+        const tailLeft = {
+          x: tailCenter.x + perpendicular.x * outerHalfWidth,
+          y: tailCenter.y + perpendicular.y * outerHalfWidth,
+        };
+        const tailRight = {
+          x: tailCenter.x - perpendicular.x * outerHalfWidth,
+          y: tailCenter.y - perpendicular.y * outerHalfWidth,
+        };
 
         ctx.beginPath();
-        ctx.moveTo(centerX, tipY);
-        ctx.lineTo(centerX - outerOffset, tailY);
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(tailLeft.x, tailLeft.y);
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.moveTo(centerX, tipY);
-        ctx.lineTo(centerX + outerOffset, tailY);
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(tailRight.x, tailRight.y);
         ctx.stroke();
 
-        const innerTipY = tipY + arrowHeight * 0.32;
-        const innerTailY = innerTipY + arrowHeight * 0.52;
+        const innerTip = {
+          x: tip.x + direction.x * arrowLength * 0.32,
+          y: tip.y + direction.y * arrowLength * 0.32,
+        };
+        const innerTailCenter = {
+          x: innerTip.x + direction.x * arrowLength * 0.52,
+          y: innerTip.y + direction.y * arrowLength * 0.52,
+        };
+        const innerHalfWidth = outerHalfWidth * 0.55;
+        const innerLeft = {
+          x: innerTailCenter.x + perpendicular.x * innerHalfWidth,
+          y: innerTailCenter.y + perpendicular.y * innerHalfWidth,
+        };
+        const innerRight = {
+          x: innerTailCenter.x - perpendicular.x * innerHalfWidth,
+          y: innerTailCenter.y - perpendicular.y * innerHalfWidth,
+        };
 
         ctx.beginPath();
-        ctx.moveTo(centerX, innerTipY);
-        ctx.lineTo(centerX - innerOffset, innerTailY);
+        ctx.moveTo(innerTip.x, innerTip.y);
+        ctx.lineTo(innerLeft.x, innerLeft.y);
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.moveTo(centerX, innerTipY);
-        ctx.lineTo(centerX + innerOffset, innerTailY);
+        ctx.moveTo(innerTip.x, innerTip.y);
+        ctx.lineTo(innerRight.x, innerRight.y);
         ctx.stroke();
       }
 
@@ -940,6 +981,12 @@
       mat.alpha = 0.92;
       mat.backFaceCulling = true;
       return mat;
+    },
+    _getArrowDirection(padType) {
+      const rotation = this._getPadRotation(padType);
+      const sin = Math.sin(rotation);
+      const cos = Math.cos(rotation);
+      return { x: sin, y: -cos };
     },
     _getPadRotation(padType) {
       switch (padType) {
