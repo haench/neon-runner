@@ -83,18 +83,27 @@ canvas {
 }
 
 .life-dot {
-  width: 18px;
-  height: 30px;
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  background: rgba(8, 14, 28, 0.85);
-  box-shadow: none;
-  transition: background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  --life-trapezoid: polygon(22% 0%, 78% 0%, 100% 100%, 0% 100%);
+  position: relative;
+  width: 24px;
+  height: 32px;
+  clip-path: var(--life-trapezoid);
+  filter: drop-shadow(0 0 10px rgba(29, 156, 255, 0.55));
 }
 
-.life-dot.full {
-  background: var(--color-ball-base);
-  box-shadow: 0 0 12px rgba(255, 0, 255, 0.65);
-  border-color: rgba(255, 255, 255, 0.95);
+.life-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: var(--life-trapezoid);
+  background: linear-gradient(180deg, rgba(8, 32, 62, 0.95) 0%, rgba(14, 56, 108, 0.85) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 14px rgba(29, 156, 255, 0.6);
+}
+
+.life-dot.full::before {
+  background: linear-gradient(180deg, rgba(29, 156, 255, 0.95) 0%, rgba(10, 110, 214, 0.9) 100%);
+  box-shadow: 0 0 18px rgba(29, 156, 255, 0.95);
 }
 
 .hud button {
