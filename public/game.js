@@ -83,6 +83,8 @@
   };
 
   const DEFAULT_PLAYER_NAME = "Runner";
+  const SCORE_HISTORY_LIMIT = 50;
+  const LEADERBOARD_DISPLAY_LIMIT = 20;
 
   const Utils = {
     lerp: (a, b, t) => a + (b - a) * t,
@@ -189,6 +191,88 @@
         localStorage.setItem(this.SCORE_HISTORY_KEY, JSON.stringify(entries));
       } catch (err) {
         console.warn("Persistence unavailable", err);
+      }
+    },
+  };
+
+  const OnlineLeaderboard = {
+    initPromise: null,
+    enabled: false,
+    service: null,
+    async init() {
+      if (this.initPromise) {
+        return this.initPromise;
+      }
+      this.initPromise = (async () => {
+        const service = window?.FirebaseService;
+        if (!service || typeof service.init !== "function") {
+          return false;
+        }
+        try {
+          const result = await service.init();
+          const enabled =
+            typeof service.isEnabled === "function"
+              ? service.isEnabled()
+              : result !== false;
+          if (!enabled) {
+            return false;
+          }
+          this.service = service;
+          this.enabled = true;
+          return true;
+        } catch (err) {
+          console.warn("Online leaderboard unavailable", err);
+          this.enabled = false;
+          return false;
+        }
+      })();
+      return this.initPromise;
+    },
+    async fetchTopScores(limitCount = LEADERBOARD_DISPLAY_LIMIT) {
+      const ready = await this.init();
+      if (!ready || !this.service || typeof this.service.fetchTopScores !== "function") {
+        return null;
+      }
+      try {
+        const entries = await this.service.fetchTopScores(limitCount);
+        if (!Array.isArray(entries)) {
+          return [];
+        }
+        return entries
+          .map((entry) => {
+            const scoreValue = Number.parseInt(entry?.score, 10);
+            const timestampValue = Number(entry?.timestamp);
+            return {
+              name:
+                typeof entry?.name === "string" && entry.name.trim().length > 0
+                  ? entry.name.trim()
+                  : DEFAULT_PLAYER_NAME,
+              score: Number.isFinite(scoreValue) ? Math.max(0, scoreValue) : 0,
+              timestamp: Number.isFinite(timestampValue) ? timestampValue : Date.now(),
+            };
+          })
+          .filter((entry) => entry.score >= 0)
+          .sort((a, b) => {
+            if (b.score === a.score) {
+              return a.timestamp - b.timestamp;
+            }
+            return b.score - a.score;
+          });
+      } catch (err) {
+        console.warn("Failed to fetch online leaderboard", err);
+        return null;
+      }
+    },
+    async submitScore(name, score) {
+      const ready = await this.init();
+      if (!ready || !this.service || typeof this.service.submitScore !== "function") {
+        return false;
+      }
+      try {
+        return await this.service.submitScore(name, score);
+      } catch (err) {
+        console.warn("Failed to submit online score", err);
+        return false;
       }
     },
   };
@@ -1403,13 +1487,32 @@
       this.highScore = PersistenceService.loadHighScore();
       this.highScoreName = PersistenceService.loadHighScoreName();
       const storedName = PersistenceService.loadPlayerName();
-      this.playerName = storedName && storedName.trim().length > 0 ? storedName : DEFAULT_PLAYER_NAME;
+      this.playerName =
+        storedName && storedName.trim().length > 0 ? storedName : DEFAULT_PLAYER_NAME;
       this.boosting = false;
       this.scoreHistory = PersistenceService.loadScoreHistory();
+      if (this.scoreHistory.length > SCORE_HISTORY_LIMIT) {
+        this.scoreHistory = this.scoreHistory.slice(0, SCORE_HISTORY_LIMIT);
+        PersistenceService.saveScoreHistory(this.scoreHistory);
+      }
+      this.onlineLeaderboardEnabled = false;
+      this.onlineLeaderboardActive = false;
+      this.onlineLeaderboardEntries = [];
       UIManager.setScore(this.score);
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setPlayerName(this.playerName);
-      UIManager.setScoreTable(this.scoreHistory);
+      this._updateScoreTable();
+      OnlineLeaderboard.init()
+        .then((enabled) => {
+          this.onlineLeaderboardEnabled = Boolean(enabled);
+          if (this.onlineLeaderboardEnabled) {
+            return this.refreshOnlineScores();
+          }
+          return null;
+        })
+        .catch((err) => {
+          console.warn("Online leaderboard initialization failed", err);
+        });
     },
     reset() {
       this.score = 0;
@@ -1453,6 +1556,9 @@
         }
         return b.score - a.score;
       });
+      if (this.scoreHistory.length > SCORE_HISTORY_LIMIT) {
+        this.scoreHistory = this.scoreHistory.slice(0, SCORE_HISTORY_LIMIT);
+      }
       PersistenceService.saveScoreHistory(this.scoreHistory);
       if (finalScore > this.highScore) {
         this.highScore = finalScore;
@@ -1462,7 +1568,51 @@
       PersistenceService.saveLastScore(finalScore, this.playerName);
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setGameOverScore(finalScore, this.playerName);
-      UIManager.setScoreTable(this.scoreHistory);
+      this._updateScoreTable();
+      if (this.onlineLeaderboardEnabled) {
+        OnlineLeaderboard.submitScore(this.playerName, finalScore)
+          .then(() => this.refreshOnlineScores())
+          .catch((err) => {
+            console.warn("Failed to sync score online", err);
+          });
+      }
+    },
+    async refreshOnlineScores() {
+      if (!this.onlineLeaderboardEnabled) return;
+      try {
+        const entries = await OnlineLeaderboard.fetchTopScores(LEADERBOARD_DISPLAY_LIMIT);
+        if (entries === null) {
+          return;
+        }
+        this.onlineLeaderboardEntries = entries || [];
+        this.onlineLeaderboardActive = true;
+        if (this.onlineLeaderboardEntries.length > 0) {
+          const topEntry = this.onlineLeaderboardEntries[0];
+          const previousScore = this.highScore;
+          const previousName = this.highScoreName;
+          this.highScore = Math.max(0, Math.floor(Number(topEntry.score) || 0));
+          this.highScoreName =
+            typeof topEntry.name === "string" && topEntry.name.trim().length > 0
+              ? topEntry.name.trim()
+              : DEFAULT_PLAYER_NAME;
+          if (this.highScore !== previousScore || this.highScoreName !== previousName) {
+            PersistenceService.saveHighScore(this.highScore, this.highScoreName);
+          }
+        }
+        UIManager.setHighScore(this.highScore, this.highScoreName);
+        this._updateScoreTable();
+      } catch (err) {
+        console.warn("Failed to refresh online leaderboard", err);
+      }
+    },
+    _updateScoreTable() {
+      const source = this.onlineLeaderboardActive
+        ? this.onlineLeaderboardEntries
+        : this.scoreHistory;
+      const entries = Array.isArray(source)
+        ? source.slice(0, LEADERBOARD_DISPLAY_LIMIT)
+        : [];
+      UIManager.setScoreTable(entries);
     },
     getScore() {
       return Math.floor(this.score);
