@@ -1012,16 +1012,17 @@
       return mat;
     },
     _getArrowDirection(padType) {
+      // Map each pad type to the texture-space direction the arrows should face.
       switch (padType) {
         case SpeedPadType.LEFT:
-          return { x: -1, y: 0 };
-        case SpeedPadType.RIGHT:
           return { x: 1, y: 0 };
+        case SpeedPadType.RIGHT:
+          return { x: -1, y: 0 };
         case SpeedPadType.BACKWARD:
-          return { x: 0, y: 1 };
+          return { x: 0, y: -1 };
         case SpeedPadType.FORWARD:
         default:
-          return { x: 0, y: -1 };
+          return { x: 0, y: 1 };
       }
     },
     _checkTrigger(pad, playerZ, playerX) {
