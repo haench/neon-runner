@@ -299,6 +299,8 @@
       this.gameOverScore = document.getElementById("gameOverScore");
       this.gameOverHighScore = document.getElementById("gameOverHighScore");
       this.menuHighScore = document.getElementById("menuHighScore");
+      this.hudHighScore = document.getElementById("hudHighScoreValue");
+      this.hudPlayerName = document.getElementById("hudPlayerName");
       this.playerNameInput = document.getElementById("playerNameInput");
       this.gameOverPlayerName = document.getElementById("gameOverPlayerName");
       this.menuHighScoreName = document.getElementById("menuHighScoreName");
@@ -311,6 +313,7 @@
         menu: this.menuButton,
       };
       this.gameOverSelection = null;
+      this.presetSelectionHandler = null;
       if (this.playerNameInput) {
         this.playerNameInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -363,6 +366,11 @@
         this.playerNameInput.value = value || "";
       }
     },
+    setCurrentPlayerName(value) {
+      if (!this.hudPlayerName) return;
+      const displayName = value && value.trim().length > 0 ? value : DEFAULT_PLAYER_NAME;
+      this.hudPlayerName.textContent = displayName;
+    },
     getPlayerName() {
       if (!this.playerNameInput) return "";
       return this.playerNameInput.value.trim();
@@ -370,12 +378,18 @@
     blurPlayerNameInput() {
       this.playerNameInput?.blur();
     },
+    setPresetSelectionHandler(handler) {
+      this.presetSelectionHandler = typeof handler === "function" ? handler : null;
+    },
     setHighScore(value, name) {
       if (this.menuHighScore) {
         this.menuHighScore.textContent = Math.floor(value).toString();
       }
       if (this.gameOverHighScore) {
         this.gameOverHighScore.textContent = Math.floor(value).toString();
+      }
+      if (this.hudHighScore) {
+        this.hudHighScore.textContent = Math.floor(value).toString();
       }
       const displayName = name && name.trim().length > 0 ? name : "Anonymous";
       if (this.menuHighScoreName) {
@@ -461,6 +475,9 @@
             this.playerNameInput.setSelectionRange(length, length);
           }
           this.playerNameInput.focus();
+          if (typeof this.presetSelectionHandler === "function") {
+            this.presetSelectionHandler(preset);
+          }
         });
       });
     },
@@ -1588,6 +1605,7 @@
       UIManager.setScore(this.score);
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setPlayerName(this.playerName);
+      UIManager.setCurrentPlayerName(this.playerName);
       this._updateScoreTable();
       OnlineLeaderboard.init()
         .then((enabled) => {
@@ -1610,6 +1628,7 @@
       const trimmed = name?.trim() ?? "";
       this.playerName = trimmed.length > 0 ? trimmed : DEFAULT_PLAYER_NAME;
       PersistenceService.savePlayerName(this.playerName);
+      UIManager.setCurrentPlayerName(this.playerName);
     },
     update(dt, isBoosting) {
       this.boosting = isBoosting;
@@ -2057,6 +2076,11 @@
       UIManager.backToMenuButton?.addEventListener("click", () => this._gotoMenu());
       UIManager.retryButton?.addEventListener("click", () => this.startRun());
       UIManager.menuButton?.addEventListener("click", () => this._gotoMenu());
+      UIManager.setPresetSelectionHandler(() => {
+        if (this.state === GameState.MENU) {
+          this.startRun();
+        }
+      });
     },
     _resetGameOverSelection() {
       this.gameOverSelectionIndex = -1;

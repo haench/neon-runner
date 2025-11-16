@@ -92,6 +92,26 @@ canvas {
   line-height: 1.4;
 }
 
+.player-display {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.player-display span {
+  font-weight: 600;
+}
+
+.high-score-display {
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.high-score-display span {
+  font-weight: 600;
+}
+
 .speed-display {
   font-size: 0.75rem;
   opacity: 0.8;
