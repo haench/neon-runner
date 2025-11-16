@@ -1179,6 +1179,7 @@
       this.padReservations = [];
       this.onHit = null;
       this.onCleared = null;
+      this.onSpawn = null;
       this.maxSpeedReached = false;
       this.maxSpawnPressure = 0;
       this.prepareSpawn(0);
@@ -1271,6 +1272,7 @@
       }
       obstacle.metadata = metadata;
       this.obstacles.push(obstacle);
+      this.onSpawn?.(obstacle);
       return safeZ;
     },
     _updateMovement(obstacle, dt) {
@@ -1663,6 +1665,10 @@
       this.collectibles = [];
       this.nextSpawnZ = GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
       this.prepareSpawn(0);
+      if (this.obstacleManager) {
+        this.obstacleManager.onSpawn = (obstacle) =>
+          this._handleObstacleSpawn(obstacle);
+      }
     },
     prepareSpawn(startZ) {
       this.nextSpawnZ =
@@ -1757,6 +1763,38 @@
         return true;
       }
       return false;
+    },
+    _handleObstacleSpawn(obstacle) {
+      if (!obstacle || !obstacle.metadata) {
+        return;
+      }
+      const lanes = Array.isArray(obstacle.metadata.lanes)
+        ? obstacle.metadata.lanes
+        : [];
+      if (lanes.length === 0) {
+        return;
+      }
+      const halfDepth = (obstacle.metadata.depth || 0) / 2;
+      const clearance = GAME_CONFIG.DIAMOND_OBSTACLE_BUFFER;
+      this.collectibles = this.collectibles.filter((diamond) => {
+        if (!diamond || !diamond.metadata) {
+          if (diamond) {
+            diamond.dispose();
+          }
+          return false;
+        }
+        if (!lanes.includes(diamond.metadata.lane)) {
+          return true;
+        }
+        const conflict =
+          Math.abs(diamond.position.z - obstacle.position.z) <
+          halfDepth + clearance;
+        if (conflict) {
+          diamond.dispose();
+          return false;
+        }
+        return true;
+      });
     },
     _canPlaceDiamond(z, lane) {
       if (!this.track) return false;
