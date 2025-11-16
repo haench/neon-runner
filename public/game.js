@@ -24,6 +24,8 @@
     SCORE_PENALTY_ON_HIT: 40,
     BONUS_SCORE_PER_DIAMOND: 120,
     MIN_DISTANCE_BETWEEN_OBSTACLES: 20,
+    OBSTACLE_DEPTH: 2.5,
+    OBSTACLE_HEIGHT: 2,
     INITIAL_SPAWN_DISTANCE: 100,
     OBSTACLE_SPAWN_RATE: 1.8,
     OBSTACLE_SPAWN_ACCELERATION: 8,
@@ -971,6 +973,7 @@
       this.track = track;
       this.obstacles = [];
       this.nextSpawnZ = GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
+      this.padReservations = [];
       this.onHit = null;
       this.onCleared = null;
       this.maxSpeedReached = false;
@@ -993,31 +996,40 @@
         this._maybeCollide(obs, playerX, playerY, playerZ);
         return true;
       });
+      this._prunePadReservations(playerZ);
     },
     _spawnIfNeeded(playerZ, playerSpeed) {
       const targetZ = playerZ + GAME_CONFIG.INITIAL_SPAWN_DISTANCE;
       for (let attempts = 0; attempts < 12 && this.nextSpawnZ <= targetZ; attempts += 1) {
-        this._spawnObstacle(this.nextSpawnZ);
-        this.nextSpawnZ += this._calculateSpacing(playerSpeed);
+        const actualZ = this._spawnObstacle(this.nextSpawnZ);
+        if (actualZ === null) {
+          this.nextSpawnZ += GAME_CONFIG.BOOST_PAD_LENGTH;
+          continue;
+        }
+        this.nextSpawnZ = actualZ + this._calculateSpacing(playerSpeed);
       }
     },
     _spawnObstacle(z) {
+      const safeZ = this._findSafeObstacleZ(z);
+      if (safeZ === null) {
+        return null;
+      }
       const laneConfig = this._pickLane();
       const width =
         laneConfig.length * GAME_CONFIG.LANE_WIDTH + (laneConfig.length - 1) * 0.5;
       const obstacle = BABYLON.MeshBuilder.CreateBox(
-        `obs_${z}`,
+        `obs_${safeZ}`,
         {
           width,
-          depth: 2.5,
-          height: 2,
+          depth: GAME_CONFIG.OBSTACLE_DEPTH,
+          height: GAME_CONFIG.OBSTACLE_HEIGHT,
         },
         this.scene
       );
-      obstacle.position.z = z;
+      obstacle.position.z = safeZ;
       obstacle.position.y = GAME_CONFIG.GROUND_Y + 1;
       obstacle.position.x = laneConfig.reduce((acc, lane) => acc + this.track.getLaneX(lane), 0) / laneConfig.length;
-      const mat = new BABYLON.StandardMaterial(`obsMat_${z}`, this.scene);
+      const mat = new BABYLON.StandardMaterial(`obsMat_${safeZ}`, this.scene);
       mat.emissiveColor = BABYLON.Color3.FromHexString(GAME_CONFIG.COLOR_OBSTACLE);
       mat.diffuseColor = mat.emissiveColor.scale(0.4);
       mat.specularColor = new BABYLON.Color3(0, 0, 0);
@@ -1031,8 +1043,8 @@
         hit: false,
         cleared: false,
         width,
-        depth: 2.5,
-        height: 2,
+        depth: GAME_CONFIG.OBSTACLE_DEPTH,
+        height: GAME_CONFIG.OBSTACLE_HEIGHT,
       };
       if (isMoving) {
         const halfTrack = GAME_CONFIG.TRACK_WIDTH / 2;
@@ -1056,6 +1068,7 @@
       }
       obstacle.metadata = metadata;
       this.obstacles.push(obstacle);
+      return safeZ;
     },
     _updateMovement(obstacle, dt) {
       if (!obstacle.metadata?.movement || dt <= 0) return;
@@ -1072,6 +1085,10 @@
     prepareSpawn(startZ) {
       this.nextSpawnZ =
         startZ + GAME_CONFIG.INITIAL_SPAWN_DISTANCE + GAME_CONFIG.INITIAL_SPAWN_BUFFER;
+      this.padReservations = [];
+    },
+    registerPadReservation(z, depth = GAME_CONFIG.BOOST_PAD_LENGTH) {
+      this.padReservations.push({ z, halfDepth: (depth ?? GAME_CONFIG.BOOST_PAD_LENGTH) / 2 });
     },
     _pickLane() {
       const rand = Math.random();
@@ -1114,6 +1131,37 @@
       this.maxSpawnPressure = Math.min(1, this.maxSpawnPressure + 0.05);
       const reduction = this.maxSpawnPressure * GAME_CONFIG.OBSTACLE_SPAWN_ACCELERATION;
       return Math.max(6, base + noise - reduction);
+    },
+    _findSafeObstacleZ(startZ) {
+      let candidate = startZ;
+      const maxAttempts = 6;
+      let attempts = 0;
+      while (attempts < maxAttempts) {
+        if (this._isPadClear(candidate)) {
+          return candidate;
+        }
+        candidate += GAME_CONFIG.BOOST_PAD_LENGTH + GAME_CONFIG.BOOST_PAD_OBSTACLE_BUFFER;
+        attempts += 1;
+      }
+      return null;
+    },
+    _isPadClear(z) {
+      if (!this.padReservations || this.padReservations.length === 0) {
+        return true;
+      }
+      const obstacleHalfDepth = GAME_CONFIG.OBSTACLE_DEPTH / 2;
+      const clearance = obstacleHalfDepth + GAME_CONFIG.BOOST_PAD_OBSTACLE_BUFFER;
+      return !this.padReservations.some((reservation) => {
+        const padHalfDepth = reservation.halfDepth ?? GAME_CONFIG.BOOST_PAD_LENGTH / 2;
+        return Math.abs(reservation.z - z) < clearance + padHalfDepth;
+      });
+    },
+    _prunePadReservations(playerZ) {
+      if (!this.padReservations) return;
+      const retainBehindDistance = GAME_CONFIG.BOOST_PAD_LENGTH;
+      this.padReservations = this.padReservations.filter(
+        (reservation) => reservation.z >= playerZ - retainBehindDistance
+      );
     },
   };
 
@@ -1175,6 +1223,10 @@
         };
         this.pads.push(pad);
       });
+      this.obstacleManager?.registerPadReservation(
+        safeZ,
+        GAME_CONFIG.BOOST_PAD_LENGTH
+      );
       this.nextPadZ = safeZ + GAME_CONFIG.BOOST_PAD_DISTANCE + Math.random() * 20;
     },
     _pickPadType() {
