@@ -8,6 +8,13 @@ import {
   orderBy,
   query,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const LEADERBOARD_COLLECTION = "leaderboard";
 const MAX_LIMIT = 50;
@@ -18,7 +25,12 @@ class FirebaseLeaderboardService {
     this._initPromise = null;
     this._app = null;
     this._db = null;
+    this._auth = null;
     this._enabled = false;
+    this._googleProvider = null;
+    this._currentUser = null;
+    this._authListeners = new Set();
+    this._authUnsubscribe = null;
   }
 
   async init() {
@@ -36,11 +48,16 @@ class FirebaseLeaderboardService {
   async submitScore(name, score) {
     const db = await this._getDb();
     if (!db) return false;
+    if (!this._currentUser) {
+      console.warn("Cannot submit score: user not authenticated");
+      return false;
+    }
     const sanitizedScore = this._sanitizeScore(score);
     const payload = {
       name: this._sanitizeName(name),
       score: sanitizedScore,
       timestamp: Date.now(),
+      uid: this._currentUser?.uid ?? null,
     };
     try {
       await addDoc(collection(db, LEADERBOARD_COLLECTION), payload);
@@ -95,6 +112,13 @@ class FirebaseLeaderboardService {
     try {
       this._app = initializeApp(config);
       this._db = getFirestore(this._app);
+      this._auth = getAuth(this._app);
+      this._googleProvider = new GoogleAuthProvider();
+      this._googleProvider.setCustomParameters({ prompt: "select_account" });
+      this._authUnsubscribe = onAuthStateChanged(this._auth, (user) => {
+        this._currentUser = user || null;
+        this._notifyAuthListeners();
+      });
       this._enabled = true;
       return true;
     } catch (err) {
@@ -110,6 +134,67 @@ class FirebaseLeaderboardService {
       return null;
     }
     return this._db;
+  }
+
+  async _getAuth() {
+    const ready = await this.init();
+    if (!ready || !this._enabled || !this._auth) {
+      return null;
+    }
+    return this._auth;
+  }
+
+  async signInWithGoogle() {
+    const auth = await this._getAuth();
+    if (!auth) {
+      throw new Error("Authentication unavailable");
+    }
+    try {
+      const result = await signInWithPopup(auth, this._googleProvider);
+      return result?.user ?? null;
+    } catch (err) {
+      console.warn("Google sign-in failed", err);
+      throw err;
+    }
+  }
+
+  async signOutUser() {
+    const auth = await this._getAuth();
+    if (!auth) {
+      throw new Error("Authentication unavailable");
+    }
+    try {
+      await signOut(auth);
+      return true;
+    } catch (err) {
+      console.warn("Failed to sign out", err);
+      throw err;
+    }
+  }
+
+  onAuthStateChanged(listener) {
+    if (typeof listener !== "function") {
+      return () => {};
+    }
+    this._authListeners.add(listener);
+    listener(this._currentUser);
+    return () => {
+      this._authListeners.delete(listener);
+    };
+  }
+
+  getCurrentUser() {
+    return this._currentUser;
+  }
+
+  _notifyAuthListeners() {
+    this._authListeners.forEach((listener) => {
+      try {
+        listener(this._currentUser);
+      } catch (err) {
+        console.warn("Auth listener failed", err);
+      }
+    });
   }
 
   _sanitizeName(raw) {

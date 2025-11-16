@@ -200,6 +200,90 @@
     },
   };
 
+  const AuthManager = {
+    initPromise: null,
+    service: null,
+    currentUser: null,
+    available: false,
+    listeners: new Set(),
+    init() {
+      if (this.initPromise) {
+        return this.initPromise;
+      }
+      this.initPromise = (async () => {
+        const service = window?.FirebaseService;
+        if (!service || typeof service.init !== "function") {
+          return false;
+        }
+        const initialized = await service.init();
+        if (!initialized) {
+          return false;
+        }
+        this.service = service;
+        if (typeof service.onAuthStateChanged === "function") {
+          service.onAuthStateChanged((user) => {
+            this.currentUser = user || null;
+            this._emit();
+          });
+        }
+        this.available = true;
+        this._emit();
+        return true;
+      })().catch((err) => {
+        console.warn("Auth initialization failed", err);
+        this.available = false;
+        return false;
+      });
+      return this.initPromise;
+    },
+    onChange(handler) {
+      if (typeof handler !== "function") {
+        return () => {};
+      }
+      this.listeners.add(handler);
+      try {
+        handler(this.currentUser);
+      } catch (err) {
+        console.warn("Auth listener error", err);
+      }
+      return () => {
+        this.listeners.delete(handler);
+      };
+    },
+    async signInWithGoogle() {
+      const ready = await this.init();
+      if (!ready || !this.service || typeof this.service.signInWithGoogle !== "function") {
+        throw new Error("Authentication unavailable");
+      }
+      return this.service.signInWithGoogle();
+    },
+    async signOut() {
+      const ready = await this.init();
+      if (!ready || !this.service || typeof this.service.signOutUser !== "function") {
+        throw new Error("Authentication unavailable");
+      }
+      return this.service.signOutUser();
+    },
+    isAvailable() {
+      return this.available;
+    },
+    isAuthenticated() {
+      return Boolean(this.currentUser);
+    },
+    getCurrentUser() {
+      return this.currentUser;
+    },
+    _emit() {
+      this.listeners.forEach((listener) => {
+        try {
+          listener(this.currentUser);
+        } catch (err) {
+          console.warn("Auth listener error", err);
+        }
+      });
+    },
+  };
+
   const OnlineLeaderboard = {
     initPromise: null,
     enabled: false,
@@ -310,12 +394,18 @@
       this.scoreTableBody = document.getElementById("scoreTableBody");
       this.scoreTableEmpty = document.getElementById("scoreTableEmpty");
       this.namePresetButtons = Array.from(document.querySelectorAll("[data-name-preset]"));
+      this.authStatus = document.getElementById("authStatus");
+      this.authSignInButton = document.getElementById("authSignInButton");
+      this.authSignOutButton = document.getElementById("authSignOutButton");
       this.gameOverButtons = {
         retry: this.retryButton,
         menu: this.menuButton,
       };
       this.gameOverSelection = null;
       this.presetSelectionHandler = null;
+      this.authBusy = false;
+      this.authAvailable = false;
+      this.authHasUser = false;
       if (this.playerNameInput) {
         this.playerNameInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -328,6 +418,7 @@
       this._bindPresetButtons();
       this.damageFlashTimeout = null;
       this.boostSkyActive = false;
+      this.updateAuthState(null, false);
     },
     _createLives() {
       this.livesContainer.innerHTML = "";
@@ -382,6 +473,85 @@
     },
     setPresetSelectionHandler(handler) {
       this.presetSelectionHandler = typeof handler === "function" ? handler : null;
+    },
+    bindAuthControls(actions) {
+      const signInHandler = actions?.onSignIn;
+      const signOutHandler = actions?.onSignOut;
+      if (this.authSignInButton) {
+        this.authSignInButton.addEventListener("click", async () => {
+          if (this.authBusy) return;
+          if (typeof signInHandler !== "function") return;
+          this.setAuthBusy(true);
+          try {
+            await signInHandler();
+          } catch (err) {
+            console.warn("Sign-in failed", err);
+            this.showAuthError("Sign-in failed. Please try again.");
+          } finally {
+            this.setAuthBusy(false);
+          }
+        });
+      }
+      if (this.authSignOutButton) {
+        this.authSignOutButton.addEventListener("click", async () => {
+          if (this.authBusy) return;
+          if (typeof signOutHandler !== "function") return;
+          this.setAuthBusy(true);
+          try {
+            await signOutHandler();
+          } catch (err) {
+            console.warn("Sign-out failed", err);
+            this.showAuthError("Sign-out failed. Please try again.");
+          } finally {
+            this.setAuthBusy(false);
+          }
+        });
+      }
+      this._syncAuthButtons();
+    },
+    setAuthBusy(state) {
+      this.authBusy = Boolean(state);
+      this._syncAuthButtons();
+    },
+    updateAuthState(user, available) {
+      this.authAvailable = Boolean(available);
+      this.authHasUser = Boolean(user);
+      const displayName =
+        (user?.displayName && user.displayName.trim().length > 0
+          ? user.displayName.trim()
+          : null) ||
+        user?.email ||
+        null;
+      let message;
+      if (!this.authAvailable) {
+        message = "Online leaderboard offline. Configure Firebase to enable it.";
+      } else if (this.authHasUser) {
+        message = `Signed in as ${displayName || "Player"}.`;
+      } else {
+        message = "Sign in to submit scores online.";
+      }
+      this._setAuthStatus(message, false);
+      this._syncAuthButtons();
+    },
+    showAuthError(message) {
+      this._setAuthStatus(message, true);
+    },
+    _setAuthStatus(message, isError) {
+      if (!this.authStatus) return;
+      this.authStatus.textContent = message;
+      this.authStatus.classList.toggle("error", Boolean(isError));
+    },
+    _syncAuthButtons() {
+      const showSignIn = this.authAvailable && !this.authHasUser;
+      const showSignOut = this.authAvailable && this.authHasUser;
+      if (this.authSignInButton) {
+        this.authSignInButton.classList.toggle("hidden", !showSignIn);
+        this.authSignInButton.disabled = !showSignIn || this.authBusy;
+      }
+      if (this.authSignOutButton) {
+        this.authSignOutButton.classList.toggle("hidden", !showSignOut);
+        this.authSignOutButton.disabled = !showSignOut || this.authBusy;
+      }
     },
     setHighScore(value, name) {
       if (this.menuHighScore) {
@@ -1658,6 +1828,16 @@
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setPlayerName(this.playerName);
       UIManager.setCurrentPlayerName(this.playerName);
+      UIManager.updateAuthState(AuthManager.getCurrentUser(), AuthManager.isAvailable());
+      AuthManager.onChange((user) => {
+        UIManager.updateAuthState(user, AuthManager.isAvailable());
+        if (user?.displayName) {
+          this._maybeAdoptAuthName(user.displayName);
+        }
+      });
+      AuthManager.init().catch(() => {
+        UIManager.updateAuthState(AuthManager.getCurrentUser(), false);
+      });
       this._updateScoreTable();
       OnlineLeaderboard.init()
         .then((enabled) => {
@@ -1727,7 +1907,7 @@
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setGameOverScore(finalScore, this.playerName);
       this._updateScoreTable();
-      if (this.onlineLeaderboardEnabled) {
+      if (this.onlineLeaderboardEnabled && AuthManager.isAuthenticated()) {
         OnlineLeaderboard.submitScore(this.playerName, finalScore)
           .then(() => this.refreshOnlineScores())
           .catch((err) => {
@@ -1774,6 +1954,15 @@
     },
     getScore() {
       return Math.floor(this.score);
+    },
+    _maybeAdoptAuthName(displayName) {
+      if (typeof displayName !== "string") return;
+      const trimmed = displayName.trim();
+      if (trimmed.length === 0) return;
+      const current = this.playerName?.trim();
+      if (!current || current === DEFAULT_PLAYER_NAME) {
+        this.setPlayerName(trimmed);
+      }
     },
   };
 
@@ -2132,6 +2321,10 @@
         if (this.state === GameState.MENU) {
           this.startRun();
         }
+      });
+      UIManager.bindAuthControls({
+        onSignIn: () => AuthManager.signInWithGoogle(),
+        onSignOut: () => AuthManager.signOut(),
       });
     },
     _resetGameOverSelection() {
