@@ -105,9 +105,16 @@
   </div>
 
   <script>
-    // Set window.FIREBASE_CONFIG before loading the game to enable
-    // the shared online leaderboard. Leave undefined to play offline.
-    window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || null;
+    // Firebase configuration required for the online leaderboard.
+    // Replace these values with a different project's config if needed.
+    window.FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDOcMMxwhLU-9a5aJ_UAksvYF2H-wo5OZY",
+      authDomain: "neon-runner-1337.firebaseapp.com",
+      projectId: "neon-runner-1337",
+      storageBucket: "neon-runner-1337.firebasestorage.app",
+      messagingSenderId: "629438445774",
+      appId: "1:629438445774:web:1c7a6be3a4f5a517c2789f",
+    };
   </script>
   <script type="module" src="firebase-service.js"></script>
   <script src="game.js"></script>
