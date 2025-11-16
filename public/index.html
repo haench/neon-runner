@@ -56,6 +56,23 @@
           </div>
         </div>
         <button id="newGameButton">New Game</button>
+        <button id="showLeaderboardButton" type="button">Show High Scores</button>
+        <div class="leaderboard menu-leaderboard hidden" id="menuLeaderboard">
+          <h3>High Scores</h3>
+          <div class="leaderboard-scroll">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody class="score-table-body" data-score-table-body></tbody>
+            </table>
+            <div class="leaderboard-empty" data-score-table-empty>No scores yet.</div>
+          </div>
+        </div>
         <div class="overlay-note">Swipe / arrow keys / tap to control</div>
       </div>
     </div>
@@ -89,9 +106,9 @@
                   <th>Score</th>
                 </tr>
               </thead>
-              <tbody id="scoreTableBody"></tbody>
+              <tbody class="score-table-body" data-score-table-body></tbody>
             </table>
-            <div id="scoreTableEmpty" class="leaderboard-empty">No scores yet.</div>
+            <div class="leaderboard-empty" data-score-table-empty>No scores yet.</div>
           </div>
         </div>
         <button id="retryButton">Retry</button>

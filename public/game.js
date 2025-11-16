@@ -391,8 +391,14 @@
       this.gameOverPlayerName = document.getElementById("gameOverPlayerName");
       this.menuHighScoreName = document.getElementById("menuHighScoreName");
       this.gameOverHighScoreName = document.getElementById("gameOverHighScoreName");
-      this.scoreTableBody = document.getElementById("scoreTableBody");
-      this.scoreTableEmpty = document.getElementById("scoreTableEmpty");
+      this.menuLeaderboard = document.getElementById("menuLeaderboard");
+      this.showLeaderboardButton = document.getElementById("showLeaderboardButton");
+      this.scoreTableBodies = Array.from(
+        document.querySelectorAll("[data-score-table-body]")
+      );
+      this.scoreTableEmptyStates = Array.from(
+        document.querySelectorAll("[data-score-table-empty]")
+      );
       this.namePresetButtons = Array.from(document.querySelectorAll("[data-name-preset]"));
       this.authStatus = document.getElementById("authStatus");
       this.authSignInButton = document.getElementById("authSignInButton");
@@ -419,6 +425,13 @@
       this.damageFlashTimeout = null;
       this.boostSkyActive = false;
       this.updateAuthState(null, false);
+      if (this.showLeaderboardButton && this.menuLeaderboard) {
+        this.showLeaderboardButton.addEventListener("click", () => {
+          const nextState = !this.isMenuLeaderboardVisible();
+          this.setMenuLeaderboardVisible(nextState);
+        });
+        this.setMenuLeaderboardVisible(false);
+      }
     },
     _createLives() {
       this.livesContainer.innerHTML = "";
@@ -457,6 +470,20 @@
     setPlayerName(value) {
       if (this.playerNameInput) {
         this.playerNameInput.value = value || "";
+      }
+    },
+    isMenuLeaderboardVisible() {
+      if (!this.menuLeaderboard) return false;
+      return !this.menuLeaderboard.classList.contains("hidden");
+    },
+    setMenuLeaderboardVisible(visible) {
+      if (!this.menuLeaderboard) return;
+      const shouldShow = Boolean(visible);
+      this.menuLeaderboard.classList.toggle("hidden", !shouldShow);
+      if (this.showLeaderboardButton) {
+        this.showLeaderboardButton.textContent = shouldShow
+          ? "Hide High Scores"
+          : "Show High Scores";
       }
     },
     setCurrentPlayerName(value) {
@@ -581,33 +608,39 @@
       }
     },
     setScoreTable(entries) {
-      if (!this.scoreTableBody) return;
-      this.scoreTableBody.innerHTML = "";
-      if (!entries || entries.length === 0) {
-        this.scoreTableEmpty?.classList.remove("hidden");
-        return;
-      }
-      this.scoreTableEmpty?.classList.add("hidden");
-      const fragment = document.createDocumentFragment();
-      entries.forEach((entry, index) => {
-        const row = document.createElement("tr");
-        const rankCell = document.createElement("td");
-        rankCell.textContent = (index + 1).toString();
-        row.appendChild(rankCell);
+      if (!this.scoreTableBodies || this.scoreTableBodies.length === 0) return;
+      const hasEntries = Array.isArray(entries) && entries.length > 0;
+      this.scoreTableBodies.forEach((body) => {
+        if (!body) return;
+        body.innerHTML = "";
+        if (!hasEntries) return;
+        const fragment = document.createDocumentFragment();
+        entries.forEach((entry, index) => {
+          const row = document.createElement("tr");
 
-        const nameCell = document.createElement("td");
-        const displayName = entry.name && entry.name.trim().length > 0 ? entry.name : "Anonymous";
-        nameCell.textContent = displayName;
-        row.appendChild(nameCell);
+          const rankCell = document.createElement("td");
+          rankCell.textContent = (index + 1).toString();
+          row.appendChild(rankCell);
 
-        const scoreCell = document.createElement("td");
-        scoreCell.textContent = Math.floor(entry.score).toString();
-        scoreCell.classList.add("score-value");
-        row.appendChild(scoreCell);
+          const nameCell = document.createElement("td");
+          const displayName =
+            entry.name && entry.name.trim().length > 0 ? entry.name : "Anonymous";
+          nameCell.textContent = displayName;
+          row.appendChild(nameCell);
 
-        fragment.appendChild(row);
+          const scoreCell = document.createElement("td");
+          scoreCell.textContent = Math.floor(entry.score).toString();
+          scoreCell.classList.add("score-value");
+          row.appendChild(scoreCell);
+
+          fragment.appendChild(row);
+        });
+        body.appendChild(fragment);
       });
-      this.scoreTableBody.appendChild(fragment);
+      this.scoreTableEmptyStates?.forEach((emptyEl) => {
+        if (!emptyEl) return;
+        emptyEl.classList.toggle("hidden", hasEntries);
+      });
     },
     showOverlay(overlay) {
       this.hideOverlays();
