@@ -413,6 +413,15 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
+.menu-leaderboard {
+  margin-top: 12px;
+  text-align: left;
+}
+
+.menu-leaderboard h3 {
+  margin-bottom: 8px;
+}
+
 .leaderboard-empty {
   position: absolute;
   inset: 0;
