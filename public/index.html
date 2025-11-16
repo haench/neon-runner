@@ -36,6 +36,15 @@
         <div class="input-group">
           <label for="playerNameInput">Player Name</label>
           <input id="playerNameInput" type="text" maxlength="20" placeholder="Enter your name" autocomplete="name" />
+          <div class="name-preset-group">
+            <div class="name-preset-label">Quick Select</div>
+            <div class="name-preset-buttons">
+              <button type="button" class="name-preset-button" data-name-preset="Jan">Jan</button>
+              <button type="button" class="name-preset-button" data-name-preset="Felix">Felix</button>
+              <button type="button" class="name-preset-button" data-name-preset="Haench">Haench</button>
+              <button type="button" class="name-preset-button" data-name-preset="Coco">Coco</button>
+            </div>
+          </div>
         </div>
         <button id="newGameButton">New Game</button>
         <div class="overlay-note">Swipe / arrow keys / tap to control</div>
@@ -78,6 +87,10 @@
         </div>
         <button id="retryButton">Retry</button>
         <button id="menuButton">Back to Menu</button>
+        <div class="game-over-actions-hint">
+          Tap/click a button or use arrow keys / controller to choose an action, then
+          press jump/enter to confirm.
+        </div>
       </div>
     </div>
   </div>
