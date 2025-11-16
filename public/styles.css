@@ -92,6 +92,26 @@ canvas {
   line-height: 1.4;
 }
 
+.player-display {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.player-display span {
+  font-weight: 600;
+}
+
+.high-score-display {
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.high-score-display span {
+  font-weight: 600;
+}
+
 .speed-display {
   font-size: 0.75rem;
   opacity: 0.8;
@@ -233,6 +253,41 @@ canvas {
   box-shadow: 0 0 12px rgba(0, 255, 255, 0.5);
 }
 
+.name-preset-group {
+  margin-top: 12px;
+}
+
+.name-preset-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+}
+
+.name-preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.name-preset-button {
+  border: 1px solid rgba(15, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--color-text);
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.name-preset-button:hover,
+.name-preset-button:focus-visible {
+  background: rgba(15, 255, 255, 0.15);
+  outline: none;
+}
+
 .overlay button {
   margin: 6px;
   border: 1px solid var(--color-text);
@@ -247,6 +302,11 @@ canvas {
 
 .overlay button:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.overlay button.selected {
+  border-color: rgba(15, 255, 255, 0.95);
+  box-shadow: 0 0 14px rgba(15, 255, 255, 0.7);
 }
 
 .leaderboard {
@@ -327,6 +387,13 @@ canvas {
   margin-top: 16px;
   font-size: 0.85rem;
   opacity: 0.8;
+}
+
+.game-over-actions-hint {
+  margin-top: 16px;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  line-height: 1.4;
 }
 
 .hidden {

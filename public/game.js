@@ -87,6 +87,7 @@
   const DEFAULT_PLAYER_NAME = "Runner";
   const SCORE_HISTORY_LIMIT = 50;
   const LEADERBOARD_DISPLAY_LIMIT = 20;
+  const GAME_OVER_ACTIONS = ["retry", "menu"];
 
   const Utils = {
     lerp: (a, b, t) => a + (b - a) * t,
@@ -298,12 +299,21 @@
       this.gameOverScore = document.getElementById("gameOverScore");
       this.gameOverHighScore = document.getElementById("gameOverHighScore");
       this.menuHighScore = document.getElementById("menuHighScore");
+      this.hudHighScore = document.getElementById("hudHighScoreValue");
+      this.hudPlayerName = document.getElementById("hudPlayerName");
       this.playerNameInput = document.getElementById("playerNameInput");
       this.gameOverPlayerName = document.getElementById("gameOverPlayerName");
       this.menuHighScoreName = document.getElementById("menuHighScoreName");
       this.gameOverHighScoreName = document.getElementById("gameOverHighScoreName");
       this.scoreTableBody = document.getElementById("scoreTableBody");
       this.scoreTableEmpty = document.getElementById("scoreTableEmpty");
+      this.namePresetButtons = Array.from(document.querySelectorAll("[data-name-preset]"));
+      this.gameOverButtons = {
+        retry: this.retryButton,
+        menu: this.menuButton,
+      };
+      this.gameOverSelection = null;
+      this.presetSelectionHandler = null;
       if (this.playerNameInput) {
         this.playerNameInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -313,6 +323,7 @@
         });
       }
       this._createLives();
+      this._bindPresetButtons();
       this.damageFlashTimeout = null;
       this.boostSkyActive = false;
     },
@@ -355,6 +366,11 @@
         this.playerNameInput.value = value || "";
       }
     },
+    setCurrentPlayerName(value) {
+      if (!this.hudPlayerName) return;
+      const displayName = value && value.trim().length > 0 ? value : DEFAULT_PLAYER_NAME;
+      this.hudPlayerName.textContent = displayName;
+    },
     getPlayerName() {
       if (!this.playerNameInput) return "";
       return this.playerNameInput.value.trim();
@@ -362,12 +378,18 @@
     blurPlayerNameInput() {
       this.playerNameInput?.blur();
     },
+    setPresetSelectionHandler(handler) {
+      this.presetSelectionHandler = typeof handler === "function" ? handler : null;
+    },
     setHighScore(value, name) {
       if (this.menuHighScore) {
         this.menuHighScore.textContent = Math.floor(value).toString();
       }
       if (this.gameOverHighScore) {
         this.gameOverHighScore.textContent = Math.floor(value).toString();
+      }
+      if (this.hudHighScore) {
+        this.hudHighScore.textContent = Math.floor(value).toString();
       }
       const displayName = name && name.trim().length > 0 ? name : "Anonymous";
       if (this.menuHighScoreName) {
@@ -440,6 +462,52 @@
       this.damageFlashTimeout = setTimeout(() => {
         container.classList.remove("damage-flash");
       }, 200);
+    },
+    _bindPresetButtons() {
+      if (!this.namePresetButtons || !this.playerNameInput) return;
+      this.namePresetButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const preset = button.getAttribute("data-name-preset") || "";
+          this.setPlayerName(preset);
+          PersistenceService.savePlayerName(preset);
+          if (typeof this.playerNameInput.setSelectionRange === "function") {
+            const length = this.playerNameInput.value.length;
+            this.playerNameInput.setSelectionRange(length, length);
+          }
+          this.playerNameInput.focus();
+          if (typeof this.presetSelectionHandler === "function") {
+            this.presetSelectionHandler(preset);
+          }
+        });
+      });
+    },
+    setGameOverSelection(option, { focus = true } = {}) {
+      const normalized = GAME_OVER_ACTIONS.includes(option) ? option : null;
+      this.gameOverSelection = normalized;
+      GAME_OVER_ACTIONS.forEach((action) => {
+        const button = this.gameOverButtons[action];
+        if (!button) return;
+        const isActive = normalized === action;
+        button.classList.toggle("selected", isActive);
+        if (isActive && focus) {
+          button.focus();
+        } else if (!isActive && focus) {
+          button.blur();
+        }
+        if (!normalized && !focus) {
+          button.blur();
+        }
+      });
+    },
+    clearGameOverSelection() {
+      this.setGameOverSelection(null, { focus: false });
+    },
+    activateGameOverSelection() {
+      if (!this.gameOverSelection) return false;
+      const button = this.gameOverButtons[this.gameOverSelection];
+      if (!button) return false;
+      button.click();
+      return true;
     },
   };
 
@@ -1537,6 +1605,7 @@
       UIManager.setScore(this.score);
       UIManager.setHighScore(this.highScore, this.highScoreName);
       UIManager.setPlayerName(this.playerName);
+      UIManager.setCurrentPlayerName(this.playerName);
       this._updateScoreTable();
       OnlineLeaderboard.init()
         .then((enabled) => {
@@ -1559,6 +1628,7 @@
       const trimmed = name?.trim() ?? "";
       this.playerName = trimmed.length > 0 ? trimmed : DEFAULT_PLAYER_NAME;
       PersistenceService.savePlayerName(this.playerName);
+      UIManager.setCurrentPlayerName(this.playerName);
     },
     update(dt, isBoosting) {
       this.boosting = isBoosting;
@@ -1928,6 +1998,8 @@
       }
       UIManager.init();
       this.canvas = canvas;
+      this.gameOverOptions = GAME_OVER_ACTIONS.slice();
+      this.gameOverSelectionIndex = -1;
       this.engine = SceneFactory.createEngine(canvas);
       const { scene, camera, glow } = SceneFactory.createScene(this.engine, canvas);
       this.scene = scene;
@@ -1963,10 +2035,18 @@
     },
     _bindInputs() {
       InputManager.onMove = (direction) => {
+        if (this.state === GameState.GAME_OVER) {
+          this._changeGameOverSelection(direction);
+          return;
+        }
         if (this.state !== GameState.RUNNING) return;
         PlayerController.requestLaneChange(direction);
       };
       InputManager.onJump = (doubleTap) => {
+        if (this.state === GameState.GAME_OVER) {
+          this._activateGameOverSelection();
+          return;
+        }
         if (this.state !== GameState.RUNNING) return;
         PlayerController.requestJump(doubleTap);
       };
@@ -1978,9 +2058,12 @@
         }
       };
       InputManager.onSpace = () => {
-        if (this.state === GameState.MENU || this.state === GameState.GAME_OVER) {
+        if (this.state === GameState.MENU) {
           this.startRun();
           return true;
+        }
+        if (this.state === GameState.GAME_OVER) {
+          return this._activateGameOverSelection();
         }
         return false;
       };
@@ -1993,6 +2076,35 @@
       UIManager.backToMenuButton?.addEventListener("click", () => this._gotoMenu());
       UIManager.retryButton?.addEventListener("click", () => this.startRun());
       UIManager.menuButton?.addEventListener("click", () => this._gotoMenu());
+      UIManager.setPresetSelectionHandler(() => {
+        if (this.state === GameState.MENU) {
+          this.startRun();
+        }
+      });
+    },
+    _resetGameOverSelection() {
+      this.gameOverSelectionIndex = -1;
+      UIManager.clearGameOverSelection();
+    },
+    _changeGameOverSelection(direction) {
+      if (!direction || !Array.isArray(this.gameOverOptions)) return;
+      if (this.gameOverOptions.length === 0) return;
+      if (this.gameOverSelectionIndex === -1) {
+        this.gameOverSelectionIndex = direction > 0 ? 0 : this.gameOverOptions.length - 1;
+      } else {
+        const delta = direction > 0 ? 1 : -1;
+        this.gameOverSelectionIndex =
+          (this.gameOverSelectionIndex + delta + this.gameOverOptions.length) %
+          this.gameOverOptions.length;
+      }
+      const option = this.gameOverOptions[this.gameOverSelectionIndex];
+      UIManager.setGameOverSelection(option);
+    },
+    _activateGameOverSelection() {
+      if (this.gameOverSelectionIndex < 0) {
+        return false;
+      }
+      return UIManager.activateGameOverSelection();
     },
     _updatePauseButton(state) {
       if (!UIManager.pauseButton) return;
@@ -2025,6 +2137,7 @@
       ScoreManager.reset();
     },
     startRun() {
+      this._resetGameOverSelection();
       const nameFromUI = UIManager.getPlayerName();
       ScoreManager.setPlayerName(nameFromUI);
       UIManager.blurPlayerNameInput();
@@ -2041,6 +2154,7 @@
       StateMachine.transitionTo(GameState.RUNNING);
     },
     _gotoMenu() {
+      this._resetGameOverSelection();
       StateMachine.transitionTo(GameState.MENU);
     },
     _handleCollision() {
@@ -2054,6 +2168,7 @@
       this._clearPads();
       this._clearCollectibles();
       ScoreManager.completeRun();
+      this._resetGameOverSelection();
       StateMachine.transitionTo(GameState.GAME_OVER);
     },
     _gameLoop() {
