@@ -1664,15 +1664,32 @@
       this.onPause = null;
       this.lastJumpInput = -999;
       this.pointerData = null;
+      this.activeGamepadIndex = null;
+      this.prevGamepadButtons = [];
+      this.lastGamepadAxisDirection = 0;
+      this.gamepadLoopHandle = null;
       window.addEventListener("keydown", this._onKeyDown);
       canvas.addEventListener("pointerdown", this._onPointerDown);
       canvas.addEventListener("pointerup", this._onPointerUp);
+      if (this._supportsGamepad()) {
+        window.addEventListener("gamepadconnected", this._onGamepadConnected);
+        window.addEventListener("gamepaddisconnected", this._onGamepadDisconnected);
+        this._startGamepadLoop();
+      }
     },
     dispose() {
       window.removeEventListener("keydown", this._onKeyDown);
       if (this.canvas) {
         this.canvas.removeEventListener("pointerdown", this._onPointerDown);
         this.canvas.removeEventListener("pointerup", this._onPointerUp);
+      }
+      if (this._supportsGamepad()) {
+        window.removeEventListener("gamepadconnected", this._onGamepadConnected);
+        window.removeEventListener("gamepaddisconnected", this._onGamepadDisconnected);
+      }
+      if (this.gamepadLoopHandle) {
+        cancelAnimationFrame(this.gamepadLoopHandle);
+        this.gamepadLoopHandle = null;
       }
     },
     _onKeyDown: (event) => {
@@ -1748,6 +1765,99 @@
         InputManager._triggerJump();
       }
       InputManager.pointerData = null;
+    },
+    _supportsGamepad() {
+      return (
+        typeof navigator !== "undefined" &&
+        typeof navigator.getGamepads === "function"
+      );
+    },
+    _startGamepadLoop() {
+      if (InputManager.gamepadLoopHandle) return;
+      const loop = () => {
+        InputManager._pollGamepad();
+        InputManager.gamepadLoopHandle = requestAnimationFrame(loop);
+      };
+      loop();
+    },
+    _pollGamepad() {
+      if (!InputManager._supportsGamepad()) return;
+      const pads = navigator.getGamepads();
+      if (!pads) return;
+      let gamepad = null;
+      if (
+        typeof InputManager.activeGamepadIndex === "number" &&
+        pads[InputManager.activeGamepadIndex]
+      ) {
+        gamepad = pads[InputManager.activeGamepadIndex];
+      } else {
+        for (let i = 0; i < pads.length; i += 1) {
+          const pad = pads[i];
+          if (pad) {
+            gamepad = pad;
+            InputManager.activeGamepadIndex = pad.index;
+            break;
+          }
+        }
+      }
+      if (!gamepad) return;
+      InputManager._handleGamepadAxes(gamepad.axes || []);
+      InputManager._handleGamepadButtons(gamepad.buttons || []);
+    },
+    _handleGamepadAxes(axes) {
+      const horizontal = axes[0] ?? 0;
+      const deadZone = 0.35;
+      const direction = Math.abs(horizontal) >= deadZone ? (horizontal > 0 ? 1 : -1) : 0;
+      if (
+        direction !== 0 &&
+        direction !== InputManager.lastGamepadAxisDirection
+      ) {
+        InputManager.onMove?.(direction);
+      }
+      if (direction === 0) {
+        InputManager.lastGamepadAxisDirection = 0;
+      } else {
+        InputManager.lastGamepadAxisDirection = direction;
+      }
+    },
+    _handleGamepadButtons(buttons) {
+      const triggerMove = (dir) => InputManager.onMove?.(dir);
+      InputManager._handleButtonPress(buttons, 14, () => triggerMove(-1));
+      InputManager._handleButtonPress(buttons, 15, () => triggerMove(1));
+      const handlePrimaryAction = () => {
+        const handled = InputManager.onSpace?.() ?? false;
+        if (!handled) {
+          InputManager._triggerJump();
+        }
+      };
+      InputManager._handleButtonPress(buttons, 0, handlePrimaryAction);
+      InputManager._handleButtonPress(buttons, 1, handlePrimaryAction);
+      InputManager._handleButtonPress(buttons, 12, () => InputManager._triggerJump());
+      const pauseHandler = () => InputManager.onPause?.();
+      InputManager._handleButtonPress(buttons, 8, pauseHandler);
+      InputManager._handleButtonPress(buttons, 9, pauseHandler);
+    },
+    _handleButtonPress(buttons, index, callback) {
+      const button = buttons[index];
+      const isPressed = Boolean(button && button.pressed);
+      const wasPressed = InputManager.prevGamepadButtons[index] ?? false;
+      if (isPressed && !wasPressed) {
+        callback();
+      }
+      InputManager.prevGamepadButtons[index] = isPressed;
+    },
+    _onGamepadConnected: (event) => {
+      if (typeof event.gamepad?.index !== "number") return;
+      if (typeof InputManager.activeGamepadIndex !== "number") {
+        InputManager.activeGamepadIndex = event.gamepad.index;
+      }
+    },
+    _onGamepadDisconnected: (event) => {
+      if (event.gamepad?.index === InputManager.activeGamepadIndex) {
+        InputManager.activeGamepadIndex = null;
+        InputManager.prevGamepadButtons = [];
+        InputManager.lastGamepadAxisDirection = 0;
+      }
     },
   };
 
